@@ -23,13 +23,20 @@ impl<'m> ReadableSizedString<'m> {
         self.memory.read_u8(self.address)
     }
 
+    pub fn content_address(&self) -> Address {
+        self.address.wrapping_add(1)
+    }
+
     pub fn validate_content(&self, safe_address_range: AddressRange) -> Result<(), MemoryAccessError> {
         let length = self.read_length() as u16;
+        let content_address = self.content_address();
 
-        self.memory.validate_access(
-            self.address.wrapping_add(1)..=(self.address.wrapping_add(1 + length)),
-            safe_address_range,
-        )?;
+        if length > 0 {
+            self.memory.validate_access(
+                content_address..=(content_address.wrapping_add(length - 1)),
+                safe_address_range,
+            )?;
+        }
 
         Ok(())
     }
@@ -65,10 +72,26 @@ mod test {
     #[test]
     fn test_bad_string() {
         let mut mem = Mem::default();
-        let start_address = *mem.address_range().end() - 255;
+        let start_address = *mem.address_range().end() - 254;
 
         mem.write_u8(start_address, 255);
 
         assert!(ReadableSizedString::new(&mem, start_address, mem.address_range()).is_err())
+    }
+
+    #[test]
+    fn test_longest_string() {
+        let mut mem = Mem::default();
+        let start_address = *mem.address_range().end() - 255;
+
+        mem.write_u8(start_address, 255);
+
+        assert_eq!(
+            ReadableSizedString::new(&mem, start_address, mem.address_range())
+                .unwrap()
+                .as_bytes()
+                .len(),
+            255
+        );
     }
 }

@@ -1,7 +1,9 @@
 use std::ops::{Range, RangeInclusive};
 
-const MEM_SIZE: usize = u16::MAX as usize;
+const MEM_SIZE: usize = (u16::MAX as usize) + 1;
 
+/// A piece of memory that allows access to it's random fragments of different sizes.
+#[derive(Clone)]
 pub struct Mem {
     content: [u8; MEM_SIZE],
 }
@@ -34,7 +36,7 @@ impl Mem {
         address_range: AddressRange,
         segment: AddressRange,
     ) -> Result<(), MemoryAccessError> {
-        if *address_range.start() > *address_range.end() || *address_range.start() <= *segment.start() || *address_range.end() > *segment.end() {
+        if *address_range.start() > *address_range.end() || *address_range.start() < *segment.start() || *address_range.end() > *segment.end() {
             return Err(MemoryAccessError {
                 access_range: address_range,
                 segment,
@@ -123,5 +125,13 @@ mod test {
             },
             0x1234abcd,
         );
+    }
+
+    #[test]
+    fn test_min_max_addresses() {
+        let mem: Mem = Mem::default();
+
+        assert_eq!(mem.content[*mem.address_range().start() as usize], 0);
+        assert_eq!(mem.content[*mem.address_range().end() as usize], 0);
     }
 }
