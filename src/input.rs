@@ -1,4 +1,5 @@
-use std::io::{Error as IOError, Stdin, stdin};
+use std::io;
+use std::io::{Error as IOError, Stdin, stdin, Write};
 
 use crate::input::InputError::BufferOverflow;
 
@@ -7,6 +8,12 @@ pub enum InputError {
     StdIOError(IOError),
     IllegalOffset,
     BufferOverflow,
+}
+
+impl From<IOError> for InputError {
+    fn from(err: IOError) -> Self {
+        InputError::StdIOError(err)
+    }
 }
 
 fn is_whitespace(chr: u8) -> bool {
@@ -45,7 +52,7 @@ pub trait Input {
                 }
                 Some(chr) => {
                     if read_len >= buffer.len() {
-                        return Err(BufferOverflow)
+                        return Err(BufferOverflow);
                     }
 
                     buffer[read_len] = chr;
@@ -123,6 +130,7 @@ pub struct StdinInput {
     stdin: Stdin,
     buffer: String,
     offset: u32,
+    prompt: Option<String>,
 }
 
 impl StdinInput {
@@ -131,6 +139,7 @@ impl StdinInput {
             stdin: stdin(),
             buffer: String::new(),
             offset: 0,
+            prompt: Some("\n> ".to_string()),
         }
     }
 }
@@ -140,9 +149,12 @@ impl Input for StdinInput {
         let offset = self.offset as usize;
 
         if self.buffer.as_bytes().len() <= offset {
-            self.stdin
-                .read_line(&mut self.buffer)
-                .map_err(|err| InputError::StdIOError(err))?;
+            if let Some(prompt) = self.prompt.as_ref() {
+                print!("{}", prompt);
+                io::stdout().flush()?;
+            }
+
+            self.stdin.read_line(&mut self.buffer)?;
 
             if self.buffer.as_bytes().len() <= offset {
                 return Ok(None);

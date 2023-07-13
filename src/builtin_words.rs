@@ -1,5 +1,6 @@
 use crate::literal::parse_literal;
-use crate::machine::{Machine, MachineError, MachineMode};
+use crate::machine::{Machine, MachineMode};
+use crate::machine_error::MachineError;
 use crate::machine_memory::ReservedAddresses;
 use crate::mem::Address;
 use crate::opcodes::OpCode;
@@ -58,7 +59,8 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"TRUE" => { process_constant(machine, TRUE)?; }
         b"FALSE" => { process_constant(machine, FALSE)?; }
         b"BASE" => { process_constant(machine, machine.memory.get_reserved_address(ReservedAddresses::BaseVar))?; }
-        b"DROP" => { process_trivial_opcode(machine, OpCode::Dup16)?; }
+        b"DUP" => { process_trivial_opcode(machine, OpCode::Dup16)?; }
+        b"DROP" => { process_trivial_opcode(machine, OpCode::Drop16)?; }
         b"+" => { process_trivial_opcode(machine, OpCode::Add16)?; }
         b"-" => { process_trivial_opcode(machine, OpCode::Sub16)?; }
         b"*" => { process_trivial_opcode(machine, OpCode::Mul16)?; }
@@ -67,9 +69,10 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"!" => { process_trivial_opcode(machine, OpCode::Store16)?; }
         b"C@" => { process_trivial_opcode(machine, OpCode::Load8)?; }
         b"C!" => { process_trivial_opcode(machine, OpCode::Store8)?; }
+        b"EMIT" => { process_trivial_opcode(machine, OpCode::Emit)?; }
         _ => {
             return match (machine.word_fallback_handler)(machine, name_address) {
-                Err(MachineError::IllegalWord) => {
+                Err(MachineError::IllegalWord(_)) => {
                     let base_address = machine.memory.get_reserved_address(ReservedAddresses::BaseVar);
                     let base = unsafe { machine.memory.raw_memory.read_u16(base_address) };
 
@@ -84,7 +87,7 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
                     ) {
                         process_literal(machine, parsed_literal)
                     } else {
-                        Err(MachineError::IllegalWord)
+                        Err(MachineError::IllegalWord(Some(name_address)))
                     }
                 }
                 res => res

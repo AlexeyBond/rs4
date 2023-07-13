@@ -1,6 +1,10 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::input::StaticStringInput;
 use crate::machine::{Machine, MachineError};
 use crate::machine_memory::MachineMemory;
+use crate::output::StringOutput;
 
 pub enum StackElement {
     Cell(u16),
@@ -28,6 +32,12 @@ impl StackElement {
     }
 }
 
+pub struct TestRunResult {
+    pub machine: Machine,
+    pub output: Rc<RefCell<Vec<u8>>>,
+    pub result: Result<(), MachineError>,
+}
+
 impl Machine {
     //noinspection RsAssertEqual
     pub fn assert_data_stack_state(&mut self, elements: &[StackElement]) {
@@ -43,12 +53,18 @@ impl Machine {
         }
     }
 
-    pub fn run_with_test_input(input_text: &'static str) -> Result<Machine, MachineError> {
-        let mut m = Machine::default();
+    pub fn run_with_test_input(input_text: &'static str) -> TestRunResult {
+        let mut machine = Machine::default();
+        let output = Rc::new(RefCell::new(Vec::new()));
 
-        m.input = Box::new(StaticStringInput::new(input_text));
-        m.interpret_input()?;
+        machine.input = Box::new(StaticStringInput::new(input_text));
+        machine.output = Box::new(StringOutput::new(output.clone()));
+        let result = machine.interpret_input();
 
-        Ok(m)
+        TestRunResult {
+            machine,
+            output,
+            result,
+        }
     }
 }

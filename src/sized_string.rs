@@ -56,10 +56,70 @@ impl<'m> ReadableSizedString<'m> {
     }
 }
 
+pub struct SizedStringWriter<'m> {
+    memory: &'m mut Mem,
+    address: Address,
+    len: u8,
+    max_len: u8,
+}
+
+impl<'m> SizedStringWriter<'m> {
+    fn new(memory: &'m mut Mem, address: Address, max_len: u8, safe_range: AddressRange) -> Result<SizedStringWriter, MemoryAccessError> {
+        memory.validate_access(
+            address..=(address.wrapping_add(max_len as u16)),
+            safe_range,
+        )?;
+
+        Ok(SizedStringWriter {
+            memory,
+            address,
+            len: 0,
+            max_len,
+        })
+    }
+
+    fn writeable_range(&self) -> AddressRange {
+        self.address..=(self.address.wrapping_add(self.max_len as u16))
+    }
+
+    fn append_u8(&mut self, value: u8) -> Result<(), MemoryAccessError> {
+        if self.len >= self.max_len {
+            return Err(MemoryAccessError {
+                access_range: self.address..=(self.address.wrapping_add(self.len as u16).wrapping_add(1)),
+                segment: self.writeable_range(),
+            });
+        }
+
+        self.len += 1;
+        self.memory.write_u8(self.address.wrapping_add(self.len as u16), value);
+
+        Ok(())
+    }
+
+    fn append_slice(&mut self, value: &[u8]) -> Result<(), MemoryAccessError> {
+        self.memory.validate_access(
+            self.address..=(self.address.wrapping_add(self.len as u16).wrapping_add(value.len() as u16)),
+            self.writeable_range(),
+        )?;
+
+        self.memory.address_slice_mut(self.address + 1 + self.len as u16, value.len()).copy_from_slice(value);
+
+        self.len += value.len() as u8;
+
+        Ok(())
+    }
+
+    fn finish(self) -> ReadableSizedString<'m> {
+        self.memory.write_u8(self.address, self.len);
+
+        unsafe { ReadableSizedString::unsafe_new(self.memory, self.address) }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::mem::Mem;
-    use crate::sized_string::ReadableSizedString;
+    use crate::sized_string::{ReadableSizedString, SizedStringWriter};
 
     #[test]
     fn test_read_sized_string() {
@@ -97,5 +157,67 @@ mod test {
                 .len(),
             255
         );
+    }
+
+    #[test]
+    fn test_write_chars() {
+        let mut mem = Mem::default();
+        let safe_range = mem.address_range();
+
+        let mut writer = SizedStringWriter::new(&mut mem, 123, 255, safe_range).unwrap();
+
+        writer.append_u8(b'F').unwrap();
+        writer.append_u8(b'O').unwrap();
+        writer.append_u8(b'0').unwrap();
+        writer.append_u8(b'B').unwrap();
+        writer.append_u8(b'A').unwrap();
+        writer.append_u8(b'R').unwrap();
+
+        assert_eq!(
+            writer.finish().as_bytes(),
+            b"FO0BAR"
+        )
+    }
+
+    #[test]
+    fn test_write_overflow() {
+        let mut mem = Mem::default();
+        let safe_range = mem.address_range();
+
+        let mut writer = SizedStringWriter::new(&mut mem, 123, 255, safe_range).unwrap();
+
+        for _ in 0..255 {
+            writer.append_u8(b'A').unwrap();
+        }
+
+        assert!(writer.append_u8(b'B').is_err())
+    }
+
+    #[test]
+    fn test_write_max_length() {
+        let mut mem = Mem::default();
+        let safe_range = mem.address_range();
+
+        let mut writer = SizedStringWriter::new(&mut mem, 123, 2, safe_range).unwrap();
+
+        writer.append_slice(b"AA").unwrap();
+
+        assert!(writer.append_u8(b'B').is_err())
+    }
+
+    #[test]
+    fn test_write_string() {
+        let mut mem = Mem::default();
+        let safe_range = mem.address_range();
+
+        let mut writer = SizedStringWriter::new(&mut mem, 123, 255, safe_range).unwrap();
+
+        writer.append_slice(b"Hello ").unwrap();
+        writer.append_slice(b"World!").unwrap();
+
+        assert_eq!(
+            writer.finish().as_bytes(),
+            b"Hello World!"
+        )
     }
 }

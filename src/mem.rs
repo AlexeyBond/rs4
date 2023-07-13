@@ -14,8 +14,8 @@ pub type AddressRange = RangeInclusive<Address>;
 
 #[derive(Debug)]
 pub struct MemoryAccessError {
-    access_range: AddressRange,
-    segment: AddressRange,
+    pub access_range: AddressRange,
+    pub segment: AddressRange,
 }
 
 impl Default for Mem {

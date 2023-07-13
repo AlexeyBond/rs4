@@ -1,7 +1,9 @@
 use int_enum::IntEnum;
 
-use crate::machine::{Machine, MachineError, MachineMode};
+use crate::machine::{Machine, MachineMode};
+use crate::machine_error::MachineError;
 use crate::mem::Address;
+use crate::sized_string::ReadableSizedString;
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Debug, IntEnum)]
@@ -29,6 +31,10 @@ pub enum OpCode {
     /// Pushes that value to data stack.
     Literal16 = 4,
 
+    /// Must be followed by a sized string.
+    /// Pushes address of that string to data stack.
+    LiteralString = 5,
+
     Dup16 = 128,
     Add16 = 129,
     Sub16 = 130,
@@ -40,6 +46,9 @@ pub enum OpCode {
     Store8 = 136,
     Load32 = 137,
     Store32 = 138,
+    Drop16 = 139,
+
+    Emit = 200,
 }
 
 impl OpCode {
@@ -47,7 +56,7 @@ impl OpCode {
         let op_code = machine.memory.raw_memory.read_u8(address);
 
         match OpCode::from_int(op_code) {
-            Err(_) => Err(MachineError::IllegalOpCodeError { op_code }),
+            Err(_) => Err(MachineError::IllegalOpCodeError { address, op_code }),
             Ok(op) => op.execute(machine, address)
         }
     }
@@ -101,10 +110,28 @@ impl OpCode {
                 address + 3
             }
 
+            OpCode::LiteralString => {
+                let string_range = ReadableSizedString::new(
+                    &machine.memory.raw_memory,
+                    address + 1,
+                    machine.memory.get_used_dict_segment(),
+                )?.full_range();
+
+                machine.memory.data_push_u16(*string_range.start())?;
+
+                string_range.end().wrapping_add(1)
+            }
+
             OpCode::Dup16 => {
                 let val = machine.memory.data_pop_u16()?;
                 machine.memory.data_push_u16(val)?;
                 machine.memory.data_push_u16(val)?;
+
+                address + 1
+            }
+
+            OpCode::Drop16 => {
+                machine.memory.data_pop_u16()?;
 
                 address + 1
             }
@@ -224,6 +251,14 @@ impl OpCode {
                 )?;
 
                 unsafe { machine.memory.raw_memory.write_u32(address, value) };
+
+                address + 1
+            }
+
+            OpCode::Emit => {
+                let char_code = machine.memory.data_pop_u16()?;
+
+                machine.output.putc(char_code)?;
 
                 address + 1
             }
