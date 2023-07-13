@@ -1,5 +1,6 @@
 use int_enum::IntEnum;
 
+use crate::input::{Input, InputError};
 use crate::mem::{Address, AddressRange, Mem, MemoryAccessError};
 use crate::opcodes::OpCode;
 use crate::readable_article::ReadableArticle;
@@ -33,8 +34,6 @@ pub enum ReservedAddresses {
 /// memory.
 #[derive(Clone)]
 pub struct MachineMemory {
-    config: MemoryLayoutConfig,
-
     /// Address of the next byte that will be used by dictionary.
     pub dict_ptr: Address,
 
@@ -71,7 +70,6 @@ impl MachineMemory {
 
         let mut mm = MachineMemory {
             last_article_ptr: None,
-            config,
             dict_ptr: *total_range.start(),
             reserved_space_start,
             call_stack_ptr: reserved_space_start,
@@ -306,6 +304,45 @@ impl MachineMemory {
             };
         }
     }
+
+    pub fn lookup_article_name_buf(&self, name_address: Address) -> Result<Option<ReadableArticle>, MemoryAccessError> {
+        let s = ReadableSizedString::new(&self.raw_memory, name_address, self.raw_memory.address_range())?;
+
+        self.lookup_article(s.as_bytes())
+    }
+
+    pub fn read_input_word(&mut self, input: &mut dyn Input) -> Result<Option<Address>, InputError> {
+        let buffer_address = self.get_reserved_address(ReservedAddresses::WordBuffer);
+        let content_address = buffer_address + 1;
+
+        let word_length = input.read_word(self.raw_memory.address_slice_mut(content_address, 255))?.len();
+
+        self.raw_memory.write_u8(buffer_address, word_length as u8);
+
+        if word_length > 0 {
+            Ok(Some(buffer_address))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn copy_string(&mut self, src_address: Address, dst_address: Address, dst_segment: AddressRange) -> Result<(), MemoryAccessError> {
+        let src_range = ReadableSizedString::new(&self.raw_memory, src_address, self.raw_memory.address_range())?.full_range();
+
+        self.raw_memory.validate_access(
+            dst_address..=(dst_address.wrapping_add((src_range.len() - 1) as u16)),
+            dst_segment,
+        )?;
+
+        for src_byte_address in src_range {
+            self.raw_memory.write_u8(
+                src_byte_address - src_address + dst_address,
+                self.raw_memory.read_u8(src_byte_address),
+            )
+        };
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -368,7 +405,7 @@ mod test {
 
     #[test]
     fn test_reserved_variables() {
-        let mut mm = make_mem();
+        let mm = make_mem();
 
         assert_eq!(
             unsafe { mm.raw_memory.read_u16(mm.get_reserved_address(ReservedAddresses::BaseVar)) },

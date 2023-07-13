@@ -2,7 +2,6 @@ use int_enum::IntEnum;
 
 use crate::machine::{Machine, MachineError, MachineMode};
 use crate::mem::Address;
-use crate::readable_article::ReadableArticle;
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Debug, IntEnum)]
@@ -29,6 +28,18 @@ pub enum OpCode {
     /// Must be followed by an 16-bit value.
     /// Pushes that value to data stack.
     Literal16 = 4,
+
+    Dup16 = 128,
+    Add16 = 129,
+    Sub16 = 130,
+    Mul16 = 131,
+    Div16 = 132,
+    Load16 = 133,
+    Store16 = 134,
+    Load8 = 135,
+    Store8 = 136,
+    Load32 = 137,
+    Store32 = 138,
 }
 
 impl OpCode {
@@ -41,27 +52,27 @@ impl OpCode {
         }
     }
 
-    fn execute(self, machine: &mut Machine, address: Address) -> Result<Address, MachineError> {
-        match self {
+    pub fn execute(self, machine: &mut Machine, address: Address) -> Result<Address, MachineError> {
+        Ok(match self {
             OpCode::Noop => {
-                Ok(address + 1)
+                address + 1
             }
 
             OpCode::DefaultArticleStart => {
                 match machine.mode {
                     MachineMode::Interpreter => {
-                        Ok(address + 1) // Noop
+                        address + 1 // Noop
                     }
                     MachineMode::Compiler => {
                         machine.memory.dict_write_opcode(OpCode::Call)?;
                         machine.memory.dict_write_u16(address + 1)?;
-                        machine.memory.call_pop_u16()
+                        machine.memory.call_pop_u16()?
                     }
                 }
             }
 
             OpCode::Return => {
-                machine.memory.call_pop_u16()
+                machine.memory.call_pop_u16()?
             }
 
             OpCode::Call => {
@@ -74,7 +85,7 @@ impl OpCode {
 
                 machine.memory.call_push_u16(address + 3)?;
 
-                Ok(target_address)
+                target_address
             }
 
             OpCode::Literal16 => {
@@ -87,8 +98,135 @@ impl OpCode {
 
                 machine.memory.data_push_u16(literal)?;
 
-                Ok(address + 3)
+                address + 3
             }
-        }.map_err(|err| err.into())
+
+            OpCode::Dup16 => {
+                let val = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(val)?;
+                machine.memory.data_push_u16(val)?;
+
+                address + 1
+            }
+
+            OpCode::Add16 => {
+                let b = machine.memory.data_pop_u16()?;
+                let a = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(a.wrapping_add(b))?;
+
+                address + 1
+            }
+
+            OpCode::Sub16 => {
+                let b = machine.memory.data_pop_u16()?;
+                let a = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(a.wrapping_sub(b))?;
+
+                address + 1
+            }
+
+            OpCode::Mul16 => {
+                let b = machine.memory.data_pop_u16()?;
+                let a = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(a.wrapping_mul(b))?;
+
+                address + 1
+            }
+
+            OpCode::Div16 => {
+                let b = machine.memory.data_pop_u16()?;
+                let a = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(a.wrapping_div(b))?;
+
+                address + 1
+            }
+
+            OpCode::Load8 => {
+                let address = machine.memory.data_pop_u16()? as Address;
+
+                machine.memory.raw_memory.validate_access(
+                    address..=address,
+                    machine.memory.raw_memory.address_range(),
+                )?;
+
+                let value = machine.memory.raw_memory.read_u8(address);
+
+                machine.memory.data_push_u16(value as u16)?;
+
+                address + 1
+            }
+
+            OpCode::Store8 => {
+                let address = machine.memory.data_pop_u16()? as Address;
+                let value = machine.memory.data_pop_u16()?;
+
+                machine.memory.raw_memory.validate_access(
+                    address..=address,
+                    machine.memory.raw_memory.address_range(),
+                )?;
+
+                machine.memory.raw_memory.write_u8(address, value as u8);
+
+                address + 1
+            }
+
+            OpCode::Load16 => {
+                let address = machine.memory.data_pop_u16()? as Address;
+
+                machine.memory.raw_memory.validate_access(
+                    address..=address.wrapping_add(1),
+                    machine.memory.raw_memory.address_range(),
+                )?;
+
+                let value = unsafe { machine.memory.raw_memory.read_u16(address) };
+
+                machine.memory.data_push_u16(value)?;
+
+                address + 1
+            }
+
+            OpCode::Store16 => {
+                let address = machine.memory.data_pop_u16()? as Address;
+                let value = machine.memory.data_pop_u16()?;
+
+                machine.memory.raw_memory.validate_access(
+                    address..=address.wrapping_add(1),
+                    machine.memory.raw_memory.address_range(),
+                )?;
+
+                unsafe { machine.memory.raw_memory.write_u16(address, value) };
+
+                address + 1
+            }
+
+            OpCode::Load32 => {
+                let address = machine.memory.data_pop_u16()? as Address;
+
+                machine.memory.raw_memory.validate_access(
+                    address..=address.wrapping_add(3),
+                    machine.memory.raw_memory.address_range(),
+                )?;
+
+                let value = unsafe { machine.memory.raw_memory.read_u32(address) };
+
+                machine.memory.data_push_u32(value)?;
+
+                address + 1
+            }
+
+            OpCode::Store32 => {
+                let address = machine.memory.data_pop_u16()? as Address;
+                let value = machine.memory.data_pop_u32()?;
+
+                machine.memory.raw_memory.validate_access(
+                    address..=address.wrapping_add(3),
+                    machine.memory.raw_memory.address_range(),
+                )?;
+
+                unsafe { machine.memory.raw_memory.write_u32(address, value) };
+
+                address + 1
+            }
+        })
     }
 }

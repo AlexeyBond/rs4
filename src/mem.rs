@@ -74,8 +74,16 @@ impl Mem {
         return &self.content[range];
     }
 
+    pub fn address_slice(&self, start: Address, length: usize) -> &[u8] {
+        return self.slice((start as usize)..((start as usize) + length));
+    }
+
     pub fn slice_mut(&mut self, range: Range<usize>) -> &mut [u8] {
         return &mut self.content[range];
+    }
+
+    pub fn address_slice_mut(&mut self, start: Address, length: usize) -> &mut [u8] {
+        return self.slice_mut((start as usize)..((start as usize) + length));
     }
 }
 

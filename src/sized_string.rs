@@ -41,6 +41,10 @@ impl<'m> ReadableSizedString<'m> {
         Ok(())
     }
 
+    pub fn full_range(&self) -> AddressRange {
+        self.address..=(self.address.wrapping_add(1).wrapping_add(self.read_length() as u16))
+    }
+
     pub unsafe fn unsafe_new(memory: &Mem, address: Address) -> ReadableSizedString {
         ReadableSizedString { memory, address }
     }

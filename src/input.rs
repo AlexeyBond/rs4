@@ -1,11 +1,12 @@
 use std::io::{Error as IOError, Stdin, stdin};
 
-use crate::input::InputError::IllegalOffset;
+use crate::input::InputError::BufferOverflow;
 
 #[derive(Debug)]
 pub enum InputError {
     StdIOError(IOError),
     IllegalOffset,
+    BufferOverflow,
 }
 
 fn is_whitespace(chr: u8) -> bool {
@@ -43,11 +44,34 @@ pub trait Input {
                     return Ok(&buffer[0..read_len]);
                 }
                 Some(chr) => {
-                    // TODO: Handle overflow
+                    if read_len >= buffer.len() {
+                        return Err(BufferOverflow)
+                    }
+
                     buffer[read_len] = chr;
                     read_len += 1;
                 }
             }
+        }
+    }
+}
+
+pub struct EmptyInput {}
+
+impl Input for EmptyInput {
+    fn read(&mut self) -> Result<Option<u8>, InputError> {
+        Ok(None)
+    }
+
+    fn tell(&self) -> Result<u32, InputError> {
+        Ok(0)
+    }
+
+    fn seek(&mut self, offset: u32) -> Result<(), InputError> {
+        if offset != 0 {
+            Err(InputError::IllegalOffset)
+        } else {
+            Ok(())
         }
     }
 }
@@ -86,7 +110,7 @@ impl Input for StaticStringInput {
 
     fn seek(&mut self, offset: u32) -> Result<(), InputError> {
         if (offset as usize) >= self.text.len() {
-            return Err(IllegalOffset);
+            return Err(InputError::IllegalOffset);
         }
 
         self.offset = offset;
@@ -136,7 +160,7 @@ impl Input for StdinInput {
 
     fn seek(&mut self, offset: u32) -> Result<(), InputError> {
         if (offset as usize) > self.buffer.as_bytes().len() {
-            return Err(IllegalOffset);
+            return Err(InputError::IllegalOffset);
         }
 
         self.offset = offset;
@@ -198,6 +222,6 @@ mod test {
         assert_eq!(input.read().unwrap(), Some('f' as u8));
 
         let bad_seek_result = input.seek(10);
-        assert!(bad_seek_result.is_err_and(|err| if let IllegalOffset = err { true } else { false }))
+        assert!(bad_seek_result.is_err_and(|err| if let InputError::IllegalOffset = err { true } else { false }))
     }
 }
