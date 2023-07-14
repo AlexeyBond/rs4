@@ -1,4 +1,4 @@
-use std::fmt;
+use std::io;
 use std::str::from_utf8;
 
 use crate::input::InputError;
@@ -11,12 +11,15 @@ use crate::sized_string::ReadableSizedString;
 pub enum MachineError {
     MemoryAccessError(MemoryAccessError),
     InputError(InputError),
+    UnexpectedInputEOF,
     OutputError(OutputError),
     IllegalOpCodeError {
         address: Address,
         op_code: u8,
     },
     IllegalWord(Option<Address>),
+    NoArticle,
+    UnexpectedArticleType,
     IllegalMode {
         expected: MachineMode,
         actual: MachineMode,
@@ -43,7 +46,7 @@ impl From<OutputError> for MachineError {
 }
 
 impl MachineError {
-    pub fn pretty_print(&self, f: &mut impl fmt::Write, machine: &Machine) -> fmt::Result {
+    pub fn pretty_print(&self, f: &mut impl io::Write, machine: &Machine) -> io::Result<()> {
         match self {
             MachineError::InputError(input_err) => {
                 match input_err {

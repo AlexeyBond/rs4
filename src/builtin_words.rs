@@ -1,3 +1,5 @@
+use int_enum::IntEnum;
+
 use crate::literal::parse_literal;
 use crate::machine::{Machine, MachineMode};
 use crate::machine_error::MachineError;
@@ -48,6 +50,56 @@ const FALSE: u16 = 0;
 pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Result<(), MachineError> {
     match ReadableSizedString::new(&machine.memory.raw_memory, name_address, machine.memory.raw_memory.address_range())?
         .as_bytes() {
+        b":" => {
+            machine.expect_mode(MachineMode::Interpreter)?;
+
+            let name_buffer_address = machine.memory
+                .read_input_word(machine.input.as_mut())?
+                .ok_or(MachineError::UnexpectedInputEOF)?;
+
+            let article_start_address = machine.memory.get_dict_ptr();
+            let previous_article_address = machine.memory.last_article_ptr.unwrap_or(Address::MAX);
+
+            machine.memory.dict_write_u16(previous_article_address)?;
+            machine.memory.dict_write_sized_string(name_buffer_address)?;
+            machine.memory.dict_write_opcode(OpCode::DefaultArticleStart)?;
+
+            machine.memory.data_push_u16(article_start_address)?;
+
+            machine.mode = MachineMode::Compiler;
+        }
+        b";" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+
+            let article_start_address = machine.memory.data_pop_u16()?;
+
+            machine.memory.dict_write_opcode(OpCode::Return)?;
+
+            machine.memory.last_article_ptr = Some(article_start_address);
+            machine.mode = MachineMode::Interpreter;
+        }
+        b"IMMEDIATE" => {
+            machine.expect_mode(MachineMode::Interpreter)?;
+
+            let body_address = machine.memory
+                .articles().next()
+                .ok_or(MachineError::NoArticle)?.body_address();
+
+            if machine.memory.raw_memory.read_u8(body_address) != OpCode::DefaultArticleStart.int_value() {
+                return Err(MachineError::UnexpectedArticleType);
+            }
+
+            machine.memory.raw_memory.write_u8(body_address, OpCode::Noop.int_value());
+        }
+        b"(" => {
+            loop {
+                match machine.input.read()? {
+                    None => { return Err(MachineError::UnexpectedInputEOF); }
+                    Some(b')') => { return Ok(()); }
+                    Some(_) => { continue; }
+                }
+            }
+        }
         b"[" => {
             machine.expect_mode(MachineMode::Compiler)?;
             machine.mode = MachineMode::Interpreter;
@@ -59,8 +111,18 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"TRUE" => { process_constant(machine, TRUE)?; }
         b"FALSE" => { process_constant(machine, FALSE)?; }
         b"BASE" => { process_constant(machine, machine.memory.get_reserved_address(ReservedAddresses::BaseVar))?; }
+        b"HERE" => { process_constant(machine, machine.memory.get_reserved_address(ReservedAddresses::HereVar))?; }
+        b"OVER" => { process_trivial_opcode(machine, OpCode::Over16)?; }
+        b"2OVER" => { process_trivial_opcode(machine, OpCode::Over32)?; }
+        b"SWAP" => { process_trivial_opcode(machine, OpCode::Swap16)?; }
+        b"2SWAP" => { process_trivial_opcode(machine, OpCode::Swap32)?; }
         b"DUP" => { process_trivial_opcode(machine, OpCode::Dup16)?; }
+        b"2DUP" => { process_trivial_opcode(machine, OpCode::Dup32)?; }
         b"DROP" => { process_trivial_opcode(machine, OpCode::Drop16)?; }
+        b"2DROP" => {
+            process_trivial_opcode(machine, OpCode::Drop16)?;
+            process_trivial_opcode(machine, OpCode::Drop16)?;
+        }
         b"+" => { process_trivial_opcode(machine, OpCode::Add16)?; }
         b"-" => { process_trivial_opcode(machine, OpCode::Sub16)?; }
         b"*" => { process_trivial_opcode(machine, OpCode::Mul16)?; }
@@ -69,6 +131,8 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"!" => { process_trivial_opcode(machine, OpCode::Store16)?; }
         b"C@" => { process_trivial_opcode(machine, OpCode::Load8)?; }
         b"C!" => { process_trivial_opcode(machine, OpCode::Store8)?; }
+        b"2@" => { process_trivial_opcode(machine, OpCode::Load32)?; }
+        b"2!" => { process_trivial_opcode(machine, OpCode::Store32)?; }
         b"EMIT" => { process_trivial_opcode(machine, OpCode::Emit)?; }
         _ => {
             return match (machine.word_fallback_handler)(machine, name_address) {

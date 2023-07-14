@@ -35,6 +35,21 @@ pub enum OpCode {
     /// Pushes address of that string to data stack.
     LiteralString = 5,
 
+    /// Must be followed by an 16-bit address of another instruction.
+    ///
+    /// Unconditionally goes to that address.
+    GoTo = 6,
+
+    /// Must be followed by an 16-bit address of another instruction.
+    ///
+    /// Takes one cell from data stack and goes to that address iff value of that cell is zero.
+    GoToIfZ = 7,
+
+    Dup32 = 123,
+    Over16 = 124,
+    Over32 = 125,
+    Swap16 = 126,
+    Swap32 = 127,
     Dup16 = 128,
     Add16 = 129,
     Sub16 = 130,
@@ -47,6 +62,10 @@ pub enum OpCode {
     Load32 = 137,
     Store32 = 138,
     Drop16 = 139,
+    Invert16 = 140,
+    And16 = 141,
+    Or16 = 142,
+    Xor16 = 143,
 
     Emit = 200,
 }
@@ -81,6 +100,10 @@ impl OpCode {
             }
 
             OpCode::Return => {
+                if machine.memory.call_stack_depth() == 0 {
+                    return Err(MachineError::Exited);
+                }
+
                 machine.memory.call_pop_u16()?
             }
 
@@ -110,6 +133,30 @@ impl OpCode {
                 address + 3
             }
 
+            OpCode::GoTo => {
+                machine.memory.raw_memory.validate_access(
+                    address + 1..=address + 2,
+                    machine.memory.get_used_dict_segment(),
+                )?;
+
+                unsafe { machine.memory.raw_memory.read_u16(address) }
+            }
+
+            OpCode::GoToIfZ => {
+                let value = machine.memory.data_pop_u16()?;
+
+                if value == 0 {
+                    machine.memory.raw_memory.validate_access(
+                        address + 1..=address + 2,
+                        machine.memory.get_used_dict_segment(),
+                    )?;
+
+                    unsafe { machine.memory.raw_memory.read_u16(address) }
+                } else {
+                    address + 3
+                }
+            }
+
             OpCode::LiteralString => {
                 let string_range = ReadableSizedString::new(
                     &machine.memory.raw_memory,
@@ -122,10 +169,46 @@ impl OpCode {
                 string_range.end().wrapping_add(1)
             }
 
+            OpCode::Over16 => {
+                todo!()
+            }
+
+            OpCode::Over32 => {
+                todo!()
+            }
+
+            OpCode::Swap16 => {
+                let a = machine.memory.data_pop_u16()?;
+                let b = machine.memory.data_pop_u16()?;
+
+                machine.memory.data_push_u16(a)?;
+                machine.memory.data_push_u16(b)?;
+
+                address + 1
+            }
+
+            OpCode::Swap32 => {
+                let a = machine.memory.data_pop_u32()?;
+                let b = machine.memory.data_pop_u32()?;
+
+                machine.memory.data_push_u32(a)?;
+                machine.memory.data_push_u32(b)?;
+
+                address + 1
+            }
+
             OpCode::Dup16 => {
                 let val = machine.memory.data_pop_u16()?;
                 machine.memory.data_push_u16(val)?;
                 machine.memory.data_push_u16(val)?;
+
+                address + 1
+            }
+
+            OpCode::Dup32 => {
+                let val = machine.memory.data_pop_u32()?;
+                machine.memory.data_push_u32(val)?;
+                machine.memory.data_push_u32(val)?;
 
                 address + 1
             }
@@ -251,6 +334,37 @@ impl OpCode {
                 )?;
 
                 unsafe { machine.memory.raw_memory.write_u32(address, value) };
+
+                address + 1
+            }
+
+            OpCode::Invert16 => {
+                let val = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(!val)?;
+
+                address + 1
+            }
+
+            OpCode::And16 => {
+                let b = machine.memory.data_pop_u16()?;
+                let a = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(a & b)?;
+
+                address + 1
+            }
+
+            OpCode::Or16 => {
+                let b = machine.memory.data_pop_u16()?;
+                let a = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(a | b)?;
+
+                address + 1
+            }
+
+            OpCode::Xor16 => {
+                let b = machine.memory.data_pop_u16()?;
+                let a = machine.memory.data_pop_u16()?;
+                machine.memory.data_push_u16(a ^ b)?;
 
                 address + 1
             }

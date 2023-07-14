@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::input::StaticStringInput;
-use crate::machine::{Machine, MachineError};
+use crate::machine::Machine;
+use crate::machine_error::MachineError;
 use crate::machine_memory::MachineMemory;
 use crate::output::StringOutput;
 

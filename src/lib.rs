@@ -1,3 +1,5 @@
+extern crate core;
+
 pub mod mem;
 pub mod machine;
 pub mod readable_article;

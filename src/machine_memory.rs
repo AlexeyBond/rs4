@@ -3,7 +3,7 @@ use int_enum::IntEnum;
 use crate::input::{Input, InputError};
 use crate::mem::{Address, AddressRange, Mem, MemoryAccessError};
 use crate::opcodes::OpCode;
-use crate::readable_article::ReadableArticle;
+use crate::readable_article::{ReadableArticle, ReadableArticlesIterator};
 use crate::sized_string::ReadableSizedString;
 
 #[derive(Copy, Clone)]
@@ -22,6 +22,8 @@ impl Default for MemoryLayoutConfig {
 #[repr(u16)]
 #[derive(Clone, Copy, PartialEq, Debug, IntEnum)]
 pub enum ReservedAddresses {
+    HereVar = 0,
+    // Address of first free byte of data space
     BaseVar = 10,
 
     WordBuffer = 256,
@@ -34,9 +36,6 @@ pub enum ReservedAddresses {
 /// memory.
 #[derive(Clone)]
 pub struct MachineMemory {
-    /// Address of the next byte that will be used by dictionary.
-    pub dict_ptr: Address,
-
     pub last_article_ptr: Option<Address>,
 
     /// Address of the last pushed word on data stack
@@ -70,7 +69,6 @@ impl MachineMemory {
 
         let mut mm = MachineMemory {
             last_article_ptr: None,
-            dict_ptr: *total_range.start(),
             reserved_space_start,
             call_stack_ptr: reserved_space_start,
             stacks_border,
@@ -90,13 +88,28 @@ impl MachineMemory {
                 self.get_reserved_address(ReservedAddresses::BaseVar),
                 10,
             );
+            self.raw_memory.write_u16(
+                self.get_reserved_address(ReservedAddresses::HereVar),
+                *self.raw_memory.address_range().start(),
+            )
+        }
+    }
+
+    pub fn get_dict_ptr(&self) -> Address {
+        unsafe {
+            self.raw_memory.read_u16(self.get_reserved_address(ReservedAddresses::HereVar))
+        }
+    }
+
+    pub fn set_dict_ptr(&mut self, address: Address) {
+        unsafe {
+            self.raw_memory.write_u16(self.get_reserved_address(ReservedAddresses::HereVar), address)
         }
     }
 
     /// Reset mutable pointers and some reserved variables to initial values.
     pub fn reset(&mut self) {
         self.last_article_ptr = None;
-        self.dict_ptr = *self.raw_memory.address_range().start();
         self.call_stack_ptr = self.reserved_space_start;
         self.data_stack_ptr = self.stacks_border;
 
@@ -113,6 +126,11 @@ impl MachineMemory {
         self.stacks_border.wrapping_sub(self.data_stack_ptr) >> 1
     }
 
+    /// Current size of a dictionary in bytes.
+    pub fn dictionary_size(&self) -> u16 {
+        self.get_dict_ptr().wrapping_sub(*self.raw_memory.address_range().start())
+    }
+
     /// Get address in reserved address space corresponding to given `ReservedAddress`.
     pub fn get_reserved_address(&self, address: ReservedAddresses) -> Address {
         self.reserved_space_start + address.int_value()
@@ -127,17 +145,17 @@ impl MachineMemory {
     ///
     /// May change with writes to dictionary.
     pub fn get_data_stack_segment(&self) -> AddressRange {
-        self.dict_ptr..=(self.stacks_border - 1)
+        self.get_dict_ptr()..=(self.stacks_border - 1)
     }
 
     /// Range of data space addresses that are not used by dict or data stack
     pub fn get_free_data_segment(&self) -> AddressRange {
-        self.dict_ptr..=(self.data_stack_ptr - 1)
+        self.get_dict_ptr()..=(self.data_stack_ptr - 1)
     }
 
     /// Range of addresses currently used by dictionary.
     pub fn get_used_dict_segment(&self) -> AddressRange {
-        (*self.raw_memory.address_range().start())..=(self.dict_ptr.saturating_sub(1))
+        (*self.raw_memory.address_range().start())..=(self.get_dict_ptr().saturating_sub(1))
     }
 
     fn push_u16(memory: &mut Mem, sp: &mut Address, safe_range: AddressRange, value: u16) -> Result<(), MemoryAccessError> {
@@ -227,13 +245,15 @@ impl MachineMemory {
     }
 
     pub fn dict_write_u8(&mut self, value: u8) -> Result<(), MemoryAccessError> {
+        let dict_ptr = self.get_dict_ptr();
+
         self.raw_memory.validate_access(
-            self.dict_ptr..=self.dict_ptr,
+            dict_ptr..=dict_ptr,
             self.get_free_data_segment(),
         )?;
 
-        self.raw_memory.write_u8(self.dict_ptr, value);
-        self.dict_ptr = self.dict_ptr.wrapping_add(1);
+        self.raw_memory.write_u8(dict_ptr, value);
+        self.set_dict_ptr(dict_ptr.wrapping_add(1));
 
         Ok(())
     }
@@ -243,46 +263,55 @@ impl MachineMemory {
     }
 
     pub fn dict_write_u16(&mut self, value: u16) -> Result<(), MemoryAccessError> {
+        let dict_ptr = self.get_dict_ptr();
+
         self.raw_memory.validate_access(
-            self.dict_ptr..=(self.dict_ptr.wrapping_add(1)),
+            dict_ptr..=(dict_ptr.wrapping_add(1)),
             self.get_free_data_segment(),
         )?;
 
-        unsafe { self.raw_memory.write_u16(self.dict_ptr, value) };
-        self.dict_ptr = self.dict_ptr.wrapping_add(2);
+        unsafe { self.raw_memory.write_u16(dict_ptr, value) };
+        self.set_dict_ptr(dict_ptr.wrapping_add(2));
 
         Ok(())
     }
 
     pub fn dict_write_u32(&mut self, value: u32) -> Result<(), MemoryAccessError> {
+        let dict_ptr = self.get_dict_ptr();
+
         self.raw_memory.validate_access(
-            self.dict_ptr..=(self.dict_ptr.wrapping_add(3)),
+            dict_ptr..=(dict_ptr.wrapping_add(3)),
             self.get_free_data_segment(),
         )?;
 
-        unsafe { self.raw_memory.write_u32(self.dict_ptr, value) };
-        self.dict_ptr = self.dict_ptr.wrapping_add(4);
+        unsafe { self.raw_memory.write_u32(dict_ptr, value) };
+        self.set_dict_ptr(dict_ptr.wrapping_add(4));
 
         Ok(())
     }
 
     pub fn dict_write_sized_string(&mut self, address: Address) -> Result<(), MemoryAccessError> {
+        let dict_ptr = self.get_dict_ptr();
+
         let s = ReadableSizedString::new(&self.raw_memory, address, self.raw_memory.address_range())?;
         let length = s.read_length();
         let content_address = s.content_address();
 
         self.raw_memory.validate_access(
-            self.dict_ptr..=(self.dict_ptr.wrapping_add(1).wrapping_add(length as u16)),
+            dict_ptr..=(dict_ptr.wrapping_add(1).wrapping_add(length as u16)),
             self.get_free_data_segment(),
         )?;
 
-        self.raw_memory.write_u8(self.dict_ptr, length);
+        self.raw_memory.write_u8(dict_ptr, length);
 
         for i in 0..(length as u16) {
-            self.raw_memory.write_u8(self.dict_ptr.wrapping_add(1).wrapping_add(i), self.raw_memory.read_u8(content_address.wrapping_add(i)));
+            self.raw_memory.write_u8(
+                dict_ptr.wrapping_add(1).wrapping_add(i),
+                self.raw_memory.read_u8(content_address.wrapping_add(i)),
+            );
         }
 
-        self.dict_ptr = self.dict_ptr.wrapping_add(1).wrapping_add(length as u16);
+        self.set_dict_ptr(dict_ptr.wrapping_add(1).wrapping_add(length as u16));
 
         Ok(())
     }
@@ -342,6 +371,10 @@ impl MachineMemory {
         };
 
         Ok(())
+    }
+
+    pub fn articles(&self) -> ReadableArticlesIterator {
+        ReadableArticlesIterator::new(&self.raw_memory, self.last_article_ptr, self.get_used_dict_segment())
     }
 }
 

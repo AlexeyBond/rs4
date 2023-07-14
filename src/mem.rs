@@ -1,3 +1,4 @@
+use std::io;
 use std::ops::{Range, RangeInclusive};
 
 const MEM_SIZE: usize = (u16::MAX as usize) + 1;
@@ -84,6 +85,10 @@ impl Mem {
 
     pub fn address_slice_mut(&mut self, start: Address, length: usize) -> &mut [u8] {
         return self.slice_mut((start as usize)..((start as usize) + length));
+    }
+
+    pub fn dump_to(&self, dst: &mut impl io::Write) -> io::Result<()> {
+        dst.write_all(&self.content)
     }
 }
 

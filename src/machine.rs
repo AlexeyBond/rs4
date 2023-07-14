@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::result::Result as StdResult;
 
 use crate::builtin_words::process_builtin_word;
@@ -14,6 +15,18 @@ type Result<T> = StdResult<T, MachineError>;
 pub enum MachineMode {
     Interpreter,
     Compiler,
+}
+
+impl Display for MachineMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f, "{}",
+            match self {
+                MachineMode::Compiler => "compiler",
+                MachineMode::Interpreter => "interpreter"
+            }
+        )
+    }
 }
 
 pub type WordFallbackHandler = fn(machine: &mut Machine, name_address: Address) -> Result<()>;
@@ -104,9 +117,10 @@ mod test {
     use super::*;
 
     fn test_16_bit_results(input: &'static str, results: &[u16]) {
-        Machine::run_with_test_input(input)
-            .machine
-            .assert_data_stack_state(&results.iter().map(|r| StackElement::Cell(*r)).collect::<Vec<_>>())
+        let mut r = Machine::run_with_test_input(input);
+
+        r.result.unwrap();
+        r.machine.assert_data_stack_state(&results.iter().map(|r| StackElement::Cell(*r)).collect::<Vec<_>>())
     }
 
     #[test]
@@ -151,6 +165,18 @@ mod test {
         test_output(
             "70 EMIT 79 DUP EMIT EMIT 66 EMIT 65 EMIT 82 EMIT",
             b"FOOBAR",
+        )
+    }
+
+    #[test]
+    fn test_colon_definition() {
+        test_16_bit_results(
+            ": foo + ;",
+            &[],
+        );
+        test_16_bit_results(
+            ": foo + ; 100 1 foo",
+            &[101],
         )
     }
 }
