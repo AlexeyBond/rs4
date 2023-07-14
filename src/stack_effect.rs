@@ -1,10 +1,5 @@
 use std::cmp::min;
 
-pub(crate) use count_size;
-pub(crate) use implement_getters;
-pub(crate) use implement_setters;
-pub(crate) use stack_effect;
-
 use crate::mem::{Address, AddressRange, Mem, MemoryAccessError};
 
 pub trait StackEffect {
@@ -191,3 +186,8 @@ mod test {
         machine.assert_data_stack_state(&[StackElement::Cell(0xef56), StackElement::Cell(0x4213)]);
     }
 }
+
+pub(crate) use count_size;
+pub(crate) use implement_getters;
+pub(crate) use implement_setters;
+pub(crate) use stack_effect;
