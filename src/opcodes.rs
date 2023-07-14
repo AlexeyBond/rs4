@@ -94,6 +94,11 @@ impl OpCode {
                     MachineMode::Compiler => {
                         machine.memory.dict_write_opcode(OpCode::Call)?;
                         machine.memory.dict_write_u16(address + 1)?;
+
+                        if machine.memory.call_stack_depth() == 0 {
+                            return Err(MachineError::Exited);
+                        }
+
                         machine.memory.call_pop_u16()?
                     }
                 }
@@ -113,7 +118,7 @@ impl OpCode {
                     machine.memory.get_used_dict_segment(),
                 )?;
 
-                let target_address = unsafe { machine.memory.raw_memory.read_u16(address) };
+                let target_address = unsafe { machine.memory.raw_memory.read_u16(address + 1) };
 
                 machine.memory.call_push_u16(address + 3)?;
 

@@ -76,7 +76,7 @@ impl MachineError {
                 write!(f, "Illegal word: {}", from_utf8(name_bytes).unwrap_or("(unprintable name)"))
             }
             MachineError::MemoryAccessError(MemoryAccessError { access_range, segment }) => {
-                write!(f, "Illegal memory access attempt to {} byte(s) at {:?} (allowed range is {:?})", access_range.len(), access_range, segment)
+                write!(f, "Illegal memory access attempt to {} byte(s) at {:X?} (allowed range is {:X?})", access_range.len(), access_range, segment)
             }
             _ => {
                 write!(f, "{:?}", self)

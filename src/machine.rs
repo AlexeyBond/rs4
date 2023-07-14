@@ -179,4 +179,12 @@ mod test {
             &[101],
         )
     }
+
+    #[test]
+    fn test_colon_definition_use() {
+        test_16_bit_results(
+            ": +3 3 + ; 2 +3 +3",
+            &[8],
+        )
+    }
 }

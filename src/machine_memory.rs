@@ -22,14 +22,21 @@ impl Default for MemoryLayoutConfig {
 #[repr(u16)]
 #[derive(Clone, Copy, PartialEq, Debug, IntEnum)]
 pub enum ReservedAddresses {
+    /// Address of first free byte of data space
     HereVar = 0,
-    // Address of first free byte of data space
+
+    /// Radix used when parsing and formatting numbers
     BaseVar = 10,
 
+    /// A buffer used to keep parsed words (as counted strings)
     WordBuffer = 256,
+
     ScratchBuffer = 512,
 
-    Max = 769, // 2 * 256 bytes for buffers + 256 bytes for built-in variables + 1 to get address of the last byte
+    /// Maximal address available in reserved space.
+    ///
+    /// 2 * 256 bytes for buffers + 256 bytes for 128 built-in variables - 1 to get offset of last byte
+    Max = 767,
 }
 
 /// A virtual machine's memory along with "registers" representing current layout and usage of the
@@ -64,7 +71,7 @@ impl Default for MachineMemory {
 impl MachineMemory {
     pub fn new(memory: Mem, config: MemoryLayoutConfig) -> MachineMemory {
         let total_range = memory.address_range();
-        let reserved_space_start = (*total_range.end() - ReservedAddresses::Max.int_value()) + 1;
+        let reserved_space_start = *total_range.end() - ReservedAddresses::Max.int_value();
         let stacks_border = reserved_space_start - 2 * config.max_call_stack_depth;
 
         let mut mm = MachineMemory {

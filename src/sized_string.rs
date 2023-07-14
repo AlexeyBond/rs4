@@ -56,6 +56,7 @@ impl<'m> ReadableSizedString<'m> {
     }
 }
 
+#[allow(dead_code)]
 pub struct SizedStringWriter<'m> {
     memory: &'m mut Mem,
     address: Address,
@@ -63,6 +64,7 @@ pub struct SizedStringWriter<'m> {
     max_len: u8,
 }
 
+#[allow(dead_code)]
 impl<'m> SizedStringWriter<'m> {
     fn new(memory: &'m mut Mem, address: Address, max_len: u8, safe_range: AddressRange) -> Result<SizedStringWriter, MemoryAccessError> {
         memory.validate_access(
