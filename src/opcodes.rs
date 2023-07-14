@@ -4,6 +4,7 @@ use crate::machine::{Machine, MachineMode};
 use crate::machine_error::MachineError;
 use crate::mem::Address;
 use crate::sized_string::ReadableSizedString;
+use crate::stack_effect::stack_effect;
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Debug, IntEnum)]
@@ -175,7 +176,12 @@ impl OpCode {
             }
 
             OpCode::Over16 => {
-                todo!()
+                let mut fx = stack_effect!(machine; a:u16, _b0:u16 => _a:u16, _b:u16, a_copy:u16)?;
+
+                fx.a_copy(fx.a());
+                fx.commit();
+
+                address + 1
             }
 
             OpCode::Over32 => {

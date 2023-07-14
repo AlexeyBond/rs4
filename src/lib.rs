@@ -12,6 +12,8 @@ pub mod literal;
 pub mod machine_memory;
 pub mod print_debug_info;
 pub mod machine_error;
+#[macro_use]
+pub mod stack_effect;
 
 #[cfg(test)]
 mod machine_testing;
