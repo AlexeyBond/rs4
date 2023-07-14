@@ -185,7 +185,12 @@ impl OpCode {
             }
 
             OpCode::Over32 => {
-                todo!()
+                let mut fx = stack_effect!(machine; a:u32, _b0:u32 => _a:u32, _b:u32, a_copy:u32)?;
+
+                fx.a_copy(fx.a());
+                fx.commit();
+
+                address + 1
             }
 
             OpCode::Swap16 => {
@@ -231,17 +236,19 @@ impl OpCode {
             }
 
             OpCode::Add16 => {
-                let b = machine.memory.data_pop_u16()?;
-                let a = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(a.wrapping_add(b))?;
+                let mut fx = stack_effect!(machine; a:u16, b:u16 => c:u16)?;
+
+                fx.c(fx.a().wrapping_add(fx.b()));
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Sub16 => {
-                let b = machine.memory.data_pop_u16()?;
-                let a = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(a.wrapping_sub(b))?;
+                let mut fx = stack_effect!(machine; a:u16, b:u16 => c:u16)?;
+
+                fx.c(fx.a().wrapping_sub(fx.b()));
+                fx.commit();
 
                 address + 1
             }

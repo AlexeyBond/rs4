@@ -21,7 +21,11 @@ pub trait StackEffect {
 
     /// Address of the lowest byte touched by this stack effect with given stack pointer
     fn min_ptr(&self, base: Address) -> Address {
-        min(self.resulting_ptr(base), base)
+        if self.in_words() > self.out_words() {
+            base
+        } else {
+            self.resulting_ptr(base)
+        }
     }
 
     fn validate_access(&self, mem: &Mem, ptr: Address, segment: AddressRange) -> Result<(), MemoryAccessError> {
@@ -49,6 +53,18 @@ impl Stackable for u16 {
 
     unsafe fn write(&self, memory: &mut Mem, address: Address) {
         memory.write_u16(address, *self)
+    }
+}
+
+impl Stackable for u32 {
+    const SIZE_WORDS: u16 = 2;
+
+    unsafe fn read(memory: &Mem, address: Address) -> Self {
+        memory.read_u32(address)
+    }
+
+    unsafe fn write(&self, memory: &mut Mem, address: Address) {
+        memory.write_u32(address, *self)
     }
 }
 
@@ -102,6 +118,8 @@ macro_rules! implement_setters {
 
 macro_rules! stack_effect {
     ($machine:expr; $($in_name:ident : $in_type:ty),* => $($out_name:ident : $out_type:ty),*) => ({
+        use std::fmt::{Debug, Formatter};
+
         use crate::stack_effect::count_size;
         use crate::stack_effect::implement_getters;
         use crate::stack_effect::implement_setters;
@@ -110,6 +128,20 @@ macro_rules! stack_effect {
 
         struct Effect<'m> {
             machine: &'m mut crate::machine::Machine,
+        }
+
+        impl<'m> Debug for Effect<'m> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                let current_ptr = self.machine.memory.data_stack_ptr;
+
+                write!(
+                    f, "({} -- {})(-{} +{})[{:04X};{:04X}][{:04X} -> {:04X}]",
+                    stringify!($($in_name : $in_type),*), stringify!($($out_name : $out_type),*),
+                    self.in_words(), self.out_words(),
+                    self.min_ptr(current_ptr), self.max_ptr(current_ptr),
+                    current_ptr, self.resulting_ptr(current_ptr),
+                )
+            }
         }
 
         impl <'m>StackEffect for Effect<'m> {
@@ -147,8 +179,10 @@ macro_rules! stack_effect {
 
 #[cfg(test)]
 mod test {
+    use crate::mem::MemoryAccessError;
     use crate::machine::Machine;
     use crate::machine_testing::StackElement;
+    use crate::stack_effect::StackEffect;
 
     #[test]
     fn test_2_to_1_effect() {
@@ -158,6 +192,9 @@ mod test {
         machine.memory.data_push_u16(0xabcd).unwrap();
 
         let mut fx = stack_effect!(&mut machine; a:u16, b:u16 => c:u16).unwrap();
+
+        assert_eq!(fx.in_words(), 2);
+        assert_eq!(fx.out_words(), 1);
 
         assert_eq!(fx.a(), 0x1234);
         assert_eq!(fx.b(), 0xabcd);
@@ -177,6 +214,9 @@ mod test {
 
         let mut fx = stack_effect!(&mut machine; a:u16 => b:u16, c:u16).unwrap();
 
+        assert_eq!(fx.in_words(), 1);
+        assert_eq!(fx.out_words(), 2);
+
         assert_eq!(fx.a(), 0x1234);
 
         fx.b(0xef56).c(0x4213);
@@ -184,6 +224,38 @@ mod test {
         fx.commit();
 
         machine.assert_data_stack_state(&[StackElement::Cell(0xef56), StackElement::Cell(0x4213)]);
+    }
+
+    #[test]
+    fn test_underflow() {
+        let mut machine = Machine::default();
+
+        machine.memory.data_push_u16(0x1234).unwrap();
+
+        #[allow(dead_code)] // commit() not used
+            let res = stack_effect!(&mut machine; _a:u16, _b:u16 => _c:u16);
+
+        assert!(matches!(res, Err(MemoryAccessError { .. })));
+    }
+
+    #[test]
+    fn test_overflow() {
+        let mut machine = Machine::default();
+
+        machine.memory.data_stack_ptr = 4;
+
+        machine.memory.data_push_u16(0x1234).unwrap();
+
+        #[allow(dead_code)] // commit() not used
+        stack_effect!(&mut machine; _a:u16 => _b:u16, _c:u16).unwrap(); // No overflow yet
+
+        #[allow(dead_code)] // commit() not used
+            let res = stack_effect!(&mut machine; _a:u16 => _b:u16, _c:u16, _d:u16);
+
+        assert!(
+            matches!(res, Err(MemoryAccessError { .. })),
+            "{:?}", res
+        );
     }
 }
 

@@ -234,6 +234,6 @@ mod test {
         assert_eq!(input.read().unwrap(), Some('f' as u8));
 
         let bad_seek_result = input.seek(10);
-        assert!(bad_seek_result.is_err_and(|err| if let InputError::IllegalOffset = err { true } else { false }))
+        assert!(matches!(bad_seek_result, Err(InputError::IllegalOffset)))
     }
 }
