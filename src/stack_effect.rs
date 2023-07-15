@@ -1,5 +1,3 @@
-use std::cmp::min;
-
 use crate::mem::{Address, AddressRange, Mem, MemoryAccessError};
 
 pub trait StackEffect {
@@ -53,6 +51,33 @@ impl Stackable for u16 {
 
     unsafe fn write(&self, memory: &mut Mem, address: Address) {
         memory.write_u16(address, *self)
+    }
+}
+
+impl Stackable for i16 {
+    const SIZE_WORDS: u16 = 1;
+
+    unsafe fn read(memory: &Mem, address: Address) -> Self {
+        memory.read_u16(address) as i16
+    }
+
+    unsafe fn write(&self, memory: &mut Mem, address: Address) {
+        memory.write_u16(address, (*self) as u16)
+    }
+}
+
+impl Stackable for bool {
+    const SIZE_WORDS: u16 = 1;
+
+    unsafe fn read(memory: &Mem, address: Address) -> Self {
+        memory.read_u16(address) != 0
+    }
+
+    unsafe fn write(&self, memory: &mut Mem, address: Address) {
+        memory.write_u16(
+            address,
+            if *self { 0xffff } else { 0 },
+        )
     }
 }
 

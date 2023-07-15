@@ -133,6 +133,13 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"C!" => { process_trivial_opcode(machine, OpCode::Store8)?; }
         b"2@" => { process_trivial_opcode(machine, OpCode::Load32)?; }
         b"2!" => { process_trivial_opcode(machine, OpCode::Store32)?; }
+        b"<" => { process_trivial_opcode(machine, OpCode::Lt16)?; }
+        b">" => { process_trivial_opcode(machine, OpCode::Gt16)?; }
+        b"=" => { process_trivial_opcode(machine, OpCode::Eq16)?; }
+        b"INVERT" => { process_trivial_opcode(machine, OpCode::Invert16)?; }
+        b"AND" => { process_trivial_opcode(machine, OpCode::And16)?; }
+        b"OR" => { process_trivial_opcode(machine, OpCode::Or16)?; }
+        b"XOR" => { process_trivial_opcode(machine, OpCode::Xor16)?; }
         b"EMIT" => { process_trivial_opcode(machine, OpCode::Emit)?; }
         _ => {
             return match (machine.word_fallback_handler)(machine, name_address) {

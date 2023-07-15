@@ -67,6 +67,9 @@ pub enum OpCode {
     And16 = 141,
     Or16 = 142,
     Xor16 = 143,
+    Eq16 = 144,
+    Lt16 = 145,
+    Gt16 = 146,
 
     Emit = 200,
 }
@@ -194,37 +197,37 @@ impl OpCode {
             }
 
             OpCode::Swap16 => {
-                let a = machine.memory.data_pop_u16()?;
-                let b = machine.memory.data_pop_u16()?;
-
-                machine.memory.data_push_u16(a)?;
-                machine.memory.data_push_u16(b)?;
+                let mut fx = stack_effect!(machine; a:u16, b: u16 => b_:u16, a_:u16)?;
+                let (a, b) = (fx.a(), fx.b());
+                fx.a_(a);
+                fx.b_(b);
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Swap32 => {
-                let a = machine.memory.data_pop_u32()?;
-                let b = machine.memory.data_pop_u32()?;
-
-                machine.memory.data_push_u32(a)?;
-                machine.memory.data_push_u32(b)?;
+                let mut fx = stack_effect!(machine; a:u32, b: u32 => b_:u32, a_:u32)?;
+                let (a, b) = (fx.a(), fx.b());
+                fx.a_(a);
+                fx.b_(b);
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Dup16 => {
-                let val = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(val)?;
-                machine.memory.data_push_u16(val)?;
+                let mut fx = stack_effect!(machine; x:u16 => _x:u16, x_copy:u16)?;
+                fx.x_copy(fx.x());
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Dup32 => {
-                let val = machine.memory.data_pop_u32()?;
-                machine.memory.data_push_u32(val)?;
-                machine.memory.data_push_u32(val)?;
+                let mut fx = stack_effect!(machine; x:u32 => _x:u32, x_copy:u32)?;
+                fx.x_copy(fx.x());
+                fx.commit();
 
                 address + 1
             }
@@ -254,32 +257,34 @@ impl OpCode {
             }
 
             OpCode::Mul16 => {
-                let b = machine.memory.data_pop_u16()?;
-                let a = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(a.wrapping_mul(b))?;
+                let mut fx = stack_effect!(machine; a:u16, b:u16 => c:u16)?;
+
+                fx.c(fx.a().wrapping_mul(fx.b()));
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Div16 => {
-                let b = machine.memory.data_pop_u16()?;
-                let a = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(a.wrapping_div(b))?;
+                let mut fx = stack_effect!(machine; a:u16, b:u16 => c:u16)?;
+
+                fx.c(fx.a().wrapping_div(fx.b()));
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Load8 => {
-                let address = machine.memory.data_pop_u16()? as Address;
+                let mut fx = stack_effect!(machine; address:Address => value:u16)?;
+                let address = fx.address();
 
-                machine.memory.raw_memory.validate_access(
+                fx.machine.memory.raw_memory.validate_access(
                     address..=address,
-                    machine.memory.raw_memory.address_range(),
+                    fx.machine.memory.raw_memory.address_range(),
                 )?;
 
-                let value = machine.memory.raw_memory.read_u8(address);
-
-                machine.memory.data_push_u16(value as u16)?;
+                fx.value(fx.machine.memory.raw_memory.read_u8(address) as u16);
+                fx.commit();
 
                 address + 1
             }
@@ -383,6 +388,30 @@ impl OpCode {
                 let b = machine.memory.data_pop_u16()?;
                 let a = machine.memory.data_pop_u16()?;
                 machine.memory.data_push_u16(a ^ b)?;
+
+                address + 1
+            }
+
+            OpCode::Eq16 => {
+                let mut fx = stack_effect!(machine; a:u16, b:u16 => r:bool)?;
+                fx.r(fx.a() == fx.b());
+                fx.commit();
+
+                address + 1
+            }
+
+            OpCode::Lt16 => {
+                let mut fx = stack_effect!(machine; a:i16, b:i16 => r:bool)?;
+                fx.r(fx.a() < fx.b());
+                fx.commit();
+
+                address + 1
+            }
+
+            OpCode::Gt16 => {
+                let mut fx = stack_effect!(machine; a:i16, b:i16 => r:bool)?;
+                fx.r(fx.a() > fx.b());
+                fx.commit();
 
                 address + 1
             }

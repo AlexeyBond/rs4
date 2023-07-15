@@ -112,6 +112,7 @@ impl Default for Machine {
 
 #[cfg(test)]
 mod test {
+    use std::str::from_utf8;
     use crate::machine_testing::*;
 
     use super::*;
@@ -119,7 +120,15 @@ mod test {
     fn test_16_bit_results(input: &'static str, results: &[u16]) {
         let mut r = Machine::run_with_test_input(input);
 
-        r.result.unwrap();
+        match r.result {
+            Ok(_) => {}
+            Err(err) => {
+                let mut buf = Vec::new();
+                err.pretty_print(&mut buf, &r.machine).unwrap();
+
+                panic!("Machine error occurred: {}", from_utf8(buf.as_slice()).unwrap());
+            }
+        }
         r.machine.assert_data_stack_state(&results.iter().map(|r| StackElement::Cell(*r)).collect::<Vec<_>>())
     }
 
@@ -186,5 +195,71 @@ mod test {
             ": +3 3 + ; 2 +3 +3",
             &[8],
         )
+    }
+
+    #[test]
+    fn test_comparison() {
+        test_16_bit_results(
+            "0 1 < -1 0 < 0 0 < 2 1 <",
+            &[0xffff, 0xffff, 0, 0],
+        );
+        test_16_bit_results(
+            "0 1 > -1 0 > 0 0 > 2 1 >",
+            &[0, 0, 0, 0xffff],
+        );
+        test_16_bit_results(
+            "0 1 = -1 0 = 0 0 = 2 1 =",
+            &[0, 0, 0xffff, 0],
+        );
+    }
+
+    #[test]
+    fn test_logic() {
+        test_16_bit_results(
+            "TRUE FALSE",
+            &[0xffff, 0],
+        );
+        test_16_bit_results(
+            "TRUE FALSE AND FALSE TRUE AND FALSE FALSE AND TRUE TRUE AND",
+            &[0, 0, 0, 0xffff],
+        );
+        test_16_bit_results(
+            "TRUE FALSE OR FALSE TRUE OR FALSE FALSE OR TRUE TRUE OR",
+            &[0xffff, 0xffff, 0, 0xffff],
+        );
+        test_16_bit_results(
+            "TRUE FALSE XOR FALSE TRUE XOR FALSE FALSE XOR TRUE TRUE XOR",
+            &[0xffff, 0xffff, 0, 0],
+        );
+        test_16_bit_results(
+            "TRUE INVERT FALSE INVERT",
+            &[0, 0xffff],
+        );
+    }
+
+    #[test]
+    fn test_dup() {
+        test_16_bit_results(
+            "1 2 DUP",
+            &[1, 2, 2],
+        );
+
+        test_16_bit_results(
+            "3 4 2DUP",
+            &[3, 4, 3, 4],
+        );
+    }
+
+    #[test]
+    fn test_drop() {
+        test_16_bit_results(
+            "1 2 3 DROP",
+            &[1, 2],
+        );
+
+        test_16_bit_results(
+            "4 5 6 2DROP",
+            &[4],
+        );
     }
 }
