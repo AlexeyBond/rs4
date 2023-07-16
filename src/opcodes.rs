@@ -1,8 +1,11 @@
+use std::io;
+use std::str::from_utf8;
 use int_enum::IntEnum;
+use crate::builtin_words::process_builtin_word;
 
 use crate::machine::{Machine, MachineMode};
 use crate::machine_error::MachineError;
-use crate::mem::Address;
+use crate::mem::{Address};
 use crate::sized_string::ReadableSizedString;
 use crate::stack_effect::stack_effect;
 
@@ -45,6 +48,10 @@ pub enum OpCode {
     ///
     /// Takes one cell from data stack and goes to that address iff value of that cell is zero.
     GoToIfZ = 7,
+
+    /// Must be followed by a sized string.
+    /// Executes a built-in word with name contained in that string.
+    ExecBuiltin = 8,
 
     Dup32 = 123,
     Over16 = 124,
@@ -174,6 +181,18 @@ impl OpCode {
                 )?.full_range();
 
                 machine.memory.data_push_u16(*string_range.start())?;
+
+                string_range.end().wrapping_add(1)
+            }
+
+            OpCode::ExecBuiltin => {
+                let string_range = ReadableSizedString::new(
+                    &machine.memory.raw_memory,
+                    address + 1,
+                    machine.memory.get_used_dict_segment(),
+                )?.full_range();
+
+                process_builtin_word(machine, *string_range.start())?;
 
                 string_range.end().wrapping_add(1)
             }
@@ -429,6 +448,104 @@ impl OpCode {
 
                 address + 1
             }
+        })
+    }
+
+    pub fn format_at(writer: &mut impl io::Write, machine: &Machine, address: Address) -> Result<Address, io::Error> {
+        let op_code = machine.memory.raw_memory.read_u8(address);
+
+        write!(writer, "{:04X}: ", address)?;
+
+        match OpCode::from_int(op_code) {
+            Err(_) => {
+                writeln!(writer, "(illegal op-code = {})", op_code)?;
+                Ok(address + 1)
+            }
+            Ok(op) => op.format(writer, machine, address)
+        }
+    }
+
+    pub fn format(self, writer: &mut impl io::Write, machine: &Machine, address: Address) -> Result<Address, io::Error> {
+        fn trivial(writer: &mut impl io::Write, address: Address, name: &str) -> Result<Address, io::Error> {
+            writeln!(writer, "{}", name)?;
+            Ok(address + 1)
+        }
+
+        Ok(match self {
+            OpCode::Noop => trivial(writer, address, "noop")?,
+            OpCode::DefaultArticleStart => trivial(writer, address, "start_article")?,
+            OpCode::Return => trivial(writer, address, "ret")?,
+            OpCode::Call => {
+                let call_address = unsafe { machine.memory.raw_memory.read_u16(address + 1) };
+                writeln!(writer, "call {:04X}", call_address)?;
+                address + 3
+            }
+            OpCode::Literal16 => {
+                let value = unsafe { machine.memory.raw_memory.read_u16(address + 1) };
+                writeln!(writer, "push16 {:04X} ({}, {})", value, value, value as i16)?;
+                address + 3
+            }
+            OpCode::LiteralString => {
+                let (range, content) = match ReadableSizedString::new(&machine.memory.raw_memory, address + 1, machine.memory.get_used_dict_segment()) {
+                    Ok(s) => (s.full_range(), s.as_bytes()),
+                    Err(_) => (address + 1..=address + 1, b"<<<<invalid string>>>>".as_slice())
+                };
+
+                match from_utf8(content) {
+                    Ok(s) => writeln!(writer, "pushStr {}", s)?,
+                    Err(_) => writeln!(writer, "pushStr {:?}", content)?
+                }
+
+                range.end().wrapping_add(1)
+            }
+            OpCode::GoTo => {
+                let call_address = unsafe { machine.memory.raw_memory.read_u16(address + 1) };
+                writeln!(writer, "jump {:04X}", call_address)?;
+                address + 3
+            }
+            OpCode::GoToIfZ => {
+                let call_address = unsafe { machine.memory.raw_memory.read_u16(address + 1) };
+                writeln!(writer, "jumpz {:04X}", call_address)?;
+                address + 3
+            }
+            OpCode::ExecBuiltin => {
+                let (range, content) = match ReadableSizedString::new(&machine.memory.raw_memory, address + 1, machine.memory.get_used_dict_segment()) {
+                    Ok(s) => (s.full_range(), s.as_bytes()),
+                    Err(_) => (address + 1..=address + 1, b"<<<<invalid string>>>>".as_slice())
+                };
+
+                match from_utf8(content) {
+                    Ok(s) => writeln!(writer, "execBuiltin {}", s)?,
+                    Err(_) => writeln!(writer, "execBuiltin {:?}", content)?
+                }
+
+                range.end().wrapping_add(1)
+            }
+            OpCode::Dup32 => trivial(writer, address, "dup32")?,
+            OpCode::Over16 => trivial(writer, address, "over")?,
+            OpCode::Over32 => trivial(writer, address, "over32")?,
+            OpCode::Swap16 => trivial(writer, address, "swap")?,
+            OpCode::Swap32 => trivial(writer, address, "swap32")?,
+            OpCode::Dup16 => trivial(writer, address, "dup")?,
+            OpCode::Add16 => trivial(writer, address, "add")?,
+            OpCode::Sub16 => trivial(writer, address, "sub")?,
+            OpCode::Mul16 => trivial(writer, address, "mul")?,
+            OpCode::Div16 => trivial(writer, address, "div")?,
+            OpCode::Load16 => trivial(writer, address, "load")?,
+            OpCode::Store16 => trivial(writer, address, "store")?,
+            OpCode::Load8 => trivial(writer, address, "load8")?,
+            OpCode::Store8 => trivial(writer, address, "store8")?,
+            OpCode::Load32 => trivial(writer, address, "load32")?,
+            OpCode::Store32 => trivial(writer, address, "store32")?,
+            OpCode::Drop16 => trivial(writer, address, "drop")?,
+            OpCode::Invert16 => trivial(writer, address, "invert")?,
+            OpCode::And16 => trivial(writer, address, "and")?,
+            OpCode::Or16 => trivial(writer, address, "or")?,
+            OpCode::Xor16 => trivial(writer, address, "xor")?,
+            OpCode::Eq16 => trivial(writer, address, "eq")?,
+            OpCode::Lt16 => trivial(writer, address, "lt")?,
+            OpCode::Gt16 => trivial(writer, address, "gt")?,
+            OpCode::Emit => trivial(writer, address, "emit")?,
         })
     }
 }

@@ -153,6 +153,19 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
 
             machine.memory.dict_write_opcode(OpCode::Return)?;
         }
+        b"POSTPONE" => {
+            let name_address = machine.read_input_word()?.ok_or(MachineError::UnexpectedInputEOF)?;
+
+            if let Some(article) = machine.memory.lookup_article_name_buf(name_address)? {
+                let body_address = article.body_address();
+
+                machine.memory.dict_write_opcode(OpCode::Call)?;
+                machine.memory.dict_write_u16(body_address)?;
+            } else {
+                machine.memory.dict_write_opcode(OpCode::ExecBuiltin)?;
+                machine.memory.dict_write_sized_string(name_address)?;
+            }
+        }
         b"(" => {
             loop {
                 match machine.input.read()? {

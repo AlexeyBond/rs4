@@ -34,6 +34,10 @@ impl<'m> ReadableArticle<'m> {
         Ok(article)
     }
 
+    pub fn get_header_address(&self) -> Address {
+        self.header_address
+    }
+
     /// Address of a sized string containing the name of this article.
     pub fn name_address(&self) -> Address {
         self.header_address.wrapping_add(2)

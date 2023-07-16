@@ -87,9 +87,13 @@ impl Machine {
         }
     }
 
+    pub fn read_input_word(&mut self) -> Result<Option<Address>> {
+        Ok(self.memory.read_input_word(self.input.as_mut())?)
+    }
+
     pub fn interpret_input(&mut self) -> Result<()> {
         loop {
-            if let Some(name_address) = self.memory.read_input_word(self.input.as_mut())? {
+            if let Some(name_address) = self.read_input_word()? {
                 self.execute_word(name_address)?;
             } else {
                 return Ok(());
@@ -320,5 +324,18 @@ mod test {
             ",
             &[40320],
         );
+    }
+
+    #[test]
+    fn test_postpone() {
+        test_16_bit_results(
+            "
+            : endif POSTPONE THEN ; IMMEDIATE
+            : myabs 1 SWAP 0 < IF DROP -1 endif ;
+
+            0 myabs -1 myabs
+            ",
+            &[1, 0xffff],
+        )
     }
 }

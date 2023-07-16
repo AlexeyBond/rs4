@@ -5,6 +5,8 @@ use std::str::from_utf8;
 use crate::machine::Machine;
 use crate::machine_memory::MachineMemory;
 use crate::mem::Address;
+use crate::opcodes::OpCode;
+use crate::readable_article::ReadableArticle;
 
 const MAX_STACK_ENTRIES_TO_PRINT: u16 = 16;
 
@@ -67,6 +69,22 @@ impl MachineMemory {
     }
 }
 
+impl<'m> ReadableArticle<'m> {
+    pub fn disassemble(&self, writer: &mut impl io::Write, machine: &Machine, limit: Address) -> Result<(), io::Error> {
+        writeln!(writer, "---- Define article {}", self.name())?;
+        writeln!(writer, "{:04X}: previous article address: {:04X}", self.get_header_address(), self.previous_address())?;
+        writeln!(writer, "{:04X}: article name: {}", self.name_address(), self.name())?;
+
+        let mut address = self.body_address();
+
+        while address < limit {
+            address = OpCode::format_at(writer, machine, address)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl Machine {
     pub fn print_state(&self, f: &mut impl io::Write) -> io::Result<()> {
         self.memory.print_memory_state(f)?;
@@ -76,6 +94,18 @@ impl Machine {
             Ok(position) => write!(f, "Input position: {position}\n"),
             Err(err) => write!(f, "Input broken: {err:?}\n"),
         }?;
+
+        Ok(())
+    }
+
+    pub fn print_disassembly(&self, writer: &mut impl io::Write) -> io::Result<()> {
+        let mut limit = self.memory.get_dict_ptr();
+
+        for article in self.memory.articles() {
+            article.disassemble(writer, self, limit)?;
+
+            limit = article.get_header_address()
+        }
 
         Ok(())
     }

@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+use std::str::from_utf8;
 use crate::mem::{Address, AddressRange, Mem, MemoryAccessError};
 
 pub struct ReadableSizedString<'m> {
@@ -42,7 +44,7 @@ impl<'m> ReadableSizedString<'m> {
     }
 
     pub fn full_range(&self) -> AddressRange {
-        self.address..=(self.address.wrapping_add(1).wrapping_add(self.read_length() as u16))
+        self.address..=(self.address.wrapping_add(self.read_length() as u16))
     }
 
     pub unsafe fn unsafe_new(memory: &Mem, address: Address) -> ReadableSizedString {
@@ -53,6 +55,15 @@ impl<'m> ReadableSizedString<'m> {
         let length = self.read_length() as usize;
 
         return self.memory.slice((self.address as usize + 1)..(self.address as usize + 1 + length));
+    }
+}
+
+impl<'m> Display for ReadableSizedString<'m> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match from_utf8(self.as_bytes()) {
+            Ok(s) => write!(f, "{}", s),
+            Err(_) => write!(f, "UNPRINTABLE STRING({:?})", self.as_bytes())
+        }
     }
 }
 

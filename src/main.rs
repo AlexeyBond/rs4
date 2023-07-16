@@ -22,6 +22,7 @@ fn main() {
                 err.pretty_print(&mut stdout(), &machine).unwrap();
                 print!("\n-----\nMachine state:\n");
                 machine.print_state(&mut stdout()).unwrap();
+                machine.print_disassembly(&mut stdout()).unwrap();
 
                 stdout().flush().unwrap();
 
