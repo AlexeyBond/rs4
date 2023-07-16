@@ -148,7 +148,7 @@ impl OpCode {
                     machine.memory.get_used_dict_segment(),
                 )?;
 
-                unsafe { machine.memory.raw_memory.read_u16(address) }
+                unsafe { machine.memory.raw_memory.read_u16(address + 1) }
             }
 
             OpCode::GoToIfZ => {
@@ -160,7 +160,7 @@ impl OpCode {
                         machine.memory.get_used_dict_segment(),
                     )?;
 
-                    unsafe { machine.memory.raw_memory.read_u16(address) }
+                    unsafe { machine.memory.raw_memory.read_u16(address + 1) }
                 } else {
                     address + 3
                 }
@@ -276,118 +276,124 @@ impl OpCode {
 
             OpCode::Load8 => {
                 let mut fx = stack_effect!(machine; address:Address => value:u16)?;
-                let address = fx.address();
+                let target_address = fx.address();
 
                 fx.machine.memory.raw_memory.validate_access(
-                    address..=address,
+                    target_address..=target_address,
                     fx.machine.memory.raw_memory.address_range(),
                 )?;
 
-                fx.value(fx.machine.memory.raw_memory.read_u8(address) as u16);
+                fx.value(fx.machine.memory.raw_memory.read_u8(target_address) as u16);
                 fx.commit();
 
                 address + 1
             }
 
             OpCode::Store8 => {
-                let address = machine.memory.data_pop_u16()? as Address;
-                let value = machine.memory.data_pop_u16()?;
+                let fx = stack_effect!(machine; value: u8, address: Address =>)?;
+                let target_address = fx.address();
 
-                machine.memory.raw_memory.validate_access(
-                    address..=address,
-                    machine.memory.raw_memory.address_range(),
+                fx.machine.memory.raw_memory.validate_access(
+                    target_address..=target_address,
+                    fx.machine.memory.raw_memory.address_range(),
                 )?;
 
-                machine.memory.raw_memory.write_u8(address, value as u8);
+                fx.machine.memory.raw_memory.write_u8(target_address, fx.value());
+
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Load16 => {
-                let address = machine.memory.data_pop_u16()? as Address;
+                let mut fx = stack_effect!(machine; address:Address => value:u16)?;
+                let target_address = fx.address();
 
-                machine.memory.raw_memory.validate_access(
-                    address..=address.wrapping_add(1),
-                    machine.memory.raw_memory.address_range(),
+                fx.machine.memory.raw_memory.validate_access(
+                    target_address..=target_address.wrapping_add(1),
+                    fx.machine.memory.raw_memory.address_range(),
                 )?;
 
-                let value = unsafe { machine.memory.raw_memory.read_u16(address) };
-
-                machine.memory.data_push_u16(value)?;
+                fx.value(unsafe { fx.machine.memory.raw_memory.read_u16(target_address) });
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Store16 => {
-                let address = machine.memory.data_pop_u16()? as Address;
-                let value = machine.memory.data_pop_u16()?;
+                let fx = stack_effect!(machine; value:u16, address: Address =>)?;
+                let target_address = fx.address();
 
-                machine.memory.raw_memory.validate_access(
-                    address..=address.wrapping_add(1),
-                    machine.memory.raw_memory.address_range(),
+                fx.machine.memory.raw_memory.validate_access(
+                    target_address..=target_address.wrapping_add(1),
+                    fx.machine.memory.raw_memory.address_range(),
                 )?;
 
-                unsafe { machine.memory.raw_memory.write_u16(address, value) };
+                unsafe { fx.machine.memory.raw_memory.write_u16(target_address, fx.value()) };
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Load32 => {
-                let address = machine.memory.data_pop_u16()? as Address;
+                let mut fx = stack_effect!(machine; address:Address => value:u32)?;
+                let target_address = fx.address();
 
-                machine.memory.raw_memory.validate_access(
-                    address..=address.wrapping_add(3),
-                    machine.memory.raw_memory.address_range(),
+                fx.machine.memory.raw_memory.validate_access(
+                    target_address..=target_address.wrapping_add(3),
+                    fx.machine.memory.raw_memory.address_range(),
                 )?;
 
-                let value = unsafe { machine.memory.raw_memory.read_u32(address) };
-
-                machine.memory.data_push_u32(value)?;
+                fx.value(unsafe { fx.machine.memory.raw_memory.read_u32(target_address) });
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Store32 => {
-                let address = machine.memory.data_pop_u16()? as Address;
-                let value = machine.memory.data_pop_u32()?;
+                let fx = stack_effect!(machine; value:u32, address: Address =>)?;
+                let target_address = fx.address();
 
-                machine.memory.raw_memory.validate_access(
-                    address..=address.wrapping_add(3),
-                    machine.memory.raw_memory.address_range(),
+                fx.machine.memory.raw_memory.validate_access(
+                    target_address..=target_address.wrapping_add(3),
+                    fx.machine.memory.raw_memory.address_range(),
                 )?;
 
-                unsafe { machine.memory.raw_memory.write_u32(address, value) };
+                unsafe { fx.machine.memory.raw_memory.write_u32(target_address, fx.value()) };
+
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Invert16 => {
-                let val = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(!val)?;
+                let mut fx = stack_effect!(machine; a:u16 => b:u16)?;
+                fx.b(!fx.a());
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::And16 => {
-                let b = machine.memory.data_pop_u16()?;
-                let a = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(a & b)?;
+                let mut fx = stack_effect!(machine; a:u16, b:u16 => c:u16)?;
+                fx.c(fx.a() & fx.b());
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Or16 => {
-                let b = machine.memory.data_pop_u16()?;
-                let a = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(a | b)?;
+                let mut fx = stack_effect!(machine; a:u16, b:u16 => c:u16)?;
+                fx.c(fx.a() | fx.b());
+                fx.commit();
 
                 address + 1
             }
 
             OpCode::Xor16 => {
-                let b = machine.memory.data_pop_u16()?;
-                let a = machine.memory.data_pop_u16()?;
-                machine.memory.data_push_u16(a ^ b)?;
+                let mut fx = stack_effect!(machine; a:u16, b:u16 => c:u16)?;
+                fx.c(fx.a() ^ fx.b());
+                fx.commit();
 
                 address + 1
             }

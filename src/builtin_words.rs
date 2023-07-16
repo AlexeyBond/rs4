@@ -7,6 +7,7 @@ use crate::machine_memory::ReservedAddresses;
 use crate::mem::Address;
 use crate::opcodes::OpCode;
 use crate::sized_string::ReadableSizedString;
+use crate::stack_effect::stack_effect;
 
 fn process_literal(machine: &mut Machine, value: u16) -> Result<(), MachineError> {
     match machine.mode {
@@ -21,7 +22,12 @@ fn process_literal(machine: &mut Machine, value: u16) -> Result<(), MachineError
 pub fn process_trivial_opcode(machine: &mut Machine, opcode: OpCode) -> Result<(), MachineError> {
     match machine.mode {
         MachineMode::Interpreter => {
-            opcode.execute(machine, 0)?;
+            let next_address = opcode.execute(machine, 0)?;
+
+            debug_assert_eq!(
+                next_address, 1,
+                "Unexpected address returned from trivial opcode {:?}", opcode,
+            );
         }
 
         MachineMode::Compiler => {
@@ -90,6 +96,62 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
             }
 
             machine.memory.raw_memory.write_u8(body_address, OpCode::Noop.int_value());
+        }
+        b"IF" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+
+            machine.memory.dict_write_opcode(OpCode::GoToIfZ)?;
+            let forward_ref = machine.memory.create_forward_reference()?;
+            machine.memory.data_push_u16(forward_ref)?;
+        }
+        b"ELSE" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+
+            let mut fx = stack_effect!(machine; old_ref:Address => new_ref: Address)?;
+            let old_ref = fx.old_ref();
+
+            fx.machine.memory.dict_write_opcode(OpCode::GoTo)?;
+            let new_ref = fx.machine.memory.create_forward_reference()?;
+            fx.new_ref(new_ref);
+            fx.machine.memory.resolve_forward_reference(old_ref)?;
+
+            fx.commit();
+        }
+        b"THEN" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+
+            let reference = machine.memory.data_pop_u16()?;
+            machine.memory.resolve_forward_reference(reference)?;
+        }
+        b"BEGIN" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+
+            machine.memory.data_push_u16(machine.memory.get_dict_ptr())?;
+        }
+        b"WHILE" => {
+            let mut fx = stack_effect!(machine; old_dest: Address => orig: Address, new_dest: Address)?;
+            let dest = fx.old_dest();
+            fx.new_dest(dest);
+
+            fx.machine.memory.dict_write_opcode(OpCode::GoToIfZ)?;
+            let orig = fx.machine.memory.create_forward_reference()?;
+            fx.orig(orig);
+            fx.commit();
+        }
+        b"REPEAT" => {
+            let fx = stack_effect!(machine; orig: Address, dest: Address => )?;
+            let (dest, orig) = (fx.dest(), fx.orig());
+
+            fx.machine.memory.dict_write_opcode(OpCode::GoTo)?;
+            fx.machine.memory.dict_write_u16(dest)?;
+            fx.machine.memory.resolve_forward_reference(orig)?;
+
+            fx.commit();
+        }
+        b"EXIT" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+
+            machine.memory.dict_write_opcode(OpCode::Return)?;
         }
         b"(" => {
             loop {

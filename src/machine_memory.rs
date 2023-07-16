@@ -102,6 +102,30 @@ impl MachineMemory {
         }
     }
 
+    pub fn create_forward_reference(&mut self) -> Result<Address, MemoryAccessError> {
+        let addr = self.get_dict_ptr();
+
+        self.dict_write_u16(0xDEAD)?;
+
+        Ok(addr)
+    }
+
+    pub fn resolve_forward_reference(&mut self, reference_address: Address) -> Result<(), MemoryAccessError> {
+        self.raw_memory.validate_access(
+            reference_address..=reference_address + 1,
+            self.get_used_dict_segment(),
+        )?;
+
+        unsafe {
+            self.raw_memory.write_u16(
+                reference_address,
+                self.get_dict_ptr(),
+            )
+        }
+
+        Ok(())
+    }
+
     pub fn get_dict_ptr(&self) -> Address {
         unsafe {
             self.raw_memory.read_u16(self.get_reserved_address(ReservedAddresses::HereVar))

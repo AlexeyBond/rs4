@@ -81,6 +81,18 @@ impl Stackable for bool {
     }
 }
 
+impl Stackable for u8 {
+    const SIZE_WORDS: u16 = 1;
+
+    unsafe fn read(memory: &Mem, address: Address) -> Self {
+        memory.read_u16(address) as u8
+    }
+
+    unsafe fn write(&self, memory: &mut Mem, address: Address) {
+        memory.write_u16(address, (*self) as u16);
+    }
+}
+
 impl Stackable for u32 {
     const SIZE_WORDS: u16 = 2;
 

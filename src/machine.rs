@@ -262,4 +262,63 @@ mod test {
             &[4],
         );
     }
+
+    #[test]
+    fn test_immediate() {
+        test_16_bit_results(
+            "
+            : C,, HERE @ C! HERE @ 1 + HERE ! ;
+            : ,, HERE @ ! HERE @ 2 + HERE ! ;
+            : iff    7 ( OpCode: GoToIfZ ) C,, HERE @ 0 ,, ; IMMEDIATE
+            : elsse  6 ( OpCode: GoTo    ) C,, HERE @ 0 ,, SWAP HERE @ SWAP ! ; IMMEDIATE
+            : endiff                                            HERE @ SWAP ! ; IMMEDIATE
+            : tst 0 < iff -1 elsse 1 endiff ;
+
+            0 tst -1 tst
+            ",
+            &[1, 0xffff],
+        )
+    }
+
+    #[test]
+    fn test_conditions() {
+        test_16_bit_results(
+            "
+            : myabs 1 SWAP 0 < IF DROP -1 THEN ;
+
+            0 myabs -1 myabs
+            ",
+            &[1, 0xffff],
+        );
+    }
+
+    #[test]
+    fn test_conditions_2() {
+        test_16_bit_results(
+            "
+            : myabs 0 < IF -1 ELSE 1 THEN ;
+
+            0 myabs -1 myabs
+            ",
+            &[1, 0xffff],
+        );
+    }
+
+    #[test]
+    fn test_while_loop() {
+        test_16_bit_results(
+            "
+            : 1- 1 - ;
+            : FACTORIAL ( +n1 -- +n2 )
+               DUP 2 < IF DROP 1 EXIT THEN
+               DUP
+               BEGIN DUP 2 > WHILE
+               1- SWAP OVER * SWAP
+               REPEAT DROP
+            ;
+            8 FACTORIAL
+            ",
+            &[40320],
+        );
+    }
 }
