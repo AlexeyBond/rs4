@@ -25,6 +25,9 @@ pub enum ReservedAddresses {
     /// Address of first free byte of data space
     HereVar = 0,
 
+    /// Address of header of currently compiled article
+    CurrentDefVar = 2,
+
     /// Radix used when parsing and formatting numbers
     BaseVar = 10,
 
@@ -98,7 +101,11 @@ impl MachineMemory {
             self.raw_memory.write_u16(
                 self.get_reserved_address(ReservedAddresses::HereVar),
                 *self.raw_memory.address_range().start(),
-            )
+            );
+            self.raw_memory.write_u16(
+                self.get_reserved_address(ReservedAddresses::CurrentDefVar),
+                Address::MAX,
+            );
         }
     }
 
@@ -406,6 +413,30 @@ impl MachineMemory {
 
     pub fn articles(&self) -> ReadableArticlesIterator {
         ReadableArticlesIterator::new(&self.raw_memory, self.last_article_ptr, self.get_used_dict_segment())
+    }
+
+    pub fn get_current_word(&self) -> Option<Address> {
+        let addr = unsafe {
+            self.raw_memory.read_u16(self.get_reserved_address(ReservedAddresses::CurrentDefVar))
+        };
+
+        if addr >= self.get_dict_ptr() {
+            return None;
+        }
+
+        Some(addr)
+    }
+
+    pub fn set_current_word(&mut self, header_address: Option<Address>) {
+        unsafe {
+            self.raw_memory.write_u16(
+                self.get_reserved_address(ReservedAddresses::CurrentDefVar),
+                match header_address {
+                    None => 0xffff,
+                    Some(addr) => addr
+                },
+            )
+        }
     }
 }
 

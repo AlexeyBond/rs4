@@ -6,6 +6,7 @@ use crate::machine_error::MachineError;
 use crate::machine_memory::ReservedAddresses;
 use crate::mem::Address;
 use crate::opcodes::OpCode;
+use crate::readable_article::ReadableArticle;
 use crate::sized_string::ReadableSizedString;
 use crate::stack_effect::stack_effect;
 
@@ -59,6 +60,10 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b":" => {
             machine.expect_mode(MachineMode::Interpreter)?;
 
+            if let Some(_) = machine.memory.get_current_word() {
+                return Err(MachineError::IllegalCompilerState);
+            }
+
             let name_buffer_address = machine.memory
                 .read_input_word(machine.input.as_mut())?
                 .ok_or(MachineError::UnexpectedInputEOF)?;
@@ -70,19 +75,31 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
             machine.memory.dict_write_sized_string(name_buffer_address)?;
             machine.memory.dict_write_opcode(OpCode::DefaultArticleStart)?;
 
-            machine.memory.data_push_u16(article_start_address)?;
+            machine.memory.set_current_word(Some(article_start_address));
 
             machine.mode = MachineMode::Compiler;
         }
         b";" => {
             machine.expect_mode(MachineMode::Compiler)?;
-
-            let article_start_address = machine.memory.data_pop_u16()?;
+            let article_start_address = machine.memory.get_current_word().ok_or(MachineError::IllegalCompilerState)?;
 
             machine.memory.dict_write_opcode(OpCode::Return)?;
 
             machine.memory.last_article_ptr = Some(article_start_address);
+            machine.memory.set_current_word(None);
             machine.mode = MachineMode::Interpreter;
+        }
+        b"RECURSE" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+            let article_header_address = machine.memory.get_current_word().ok_or(MachineError::IllegalCompilerState)?;
+            let article_body_address = ReadableArticle::new(
+                &machine.memory.raw_memory,
+                article_header_address,
+                machine.memory.get_used_dict_segment(),
+            )?.body_address();
+
+            machine.memory.dict_write_opcode(OpCode::Call)?;
+            machine.memory.dict_write_u16(article_body_address)?;
         }
         b"IMMEDIATE" => {
             machine.expect_mode(MachineMode::Interpreter)?;

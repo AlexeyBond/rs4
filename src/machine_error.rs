@@ -18,6 +18,7 @@ pub enum MachineError {
         op_code: u8,
     },
     IllegalWord(Option<Address>),
+    IllegalCompilerState,
     NoArticle,
     UnexpectedArticleType,
     IllegalMode {

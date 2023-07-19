@@ -338,4 +338,19 @@ mod test {
             &[1, 0xffff],
         )
     }
+
+    #[test]
+    fn test_recurse() {
+        test_16_bit_results(
+            "
+            : 1- 1 - ;
+            : FACTORIAL ( +n1 -- +n2)
+               DUP 2 < IF DROP 1 EXIT THEN
+               DUP 1- RECURSE *
+            ;
+            8 FACTORIAL
+            ",
+            &[40320],
+        )
+    }
 }
