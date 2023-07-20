@@ -4,20 +4,22 @@ use crate::literal::parse_literal;
 use crate::machine::{Machine, MachineMode};
 use crate::machine_error::MachineError;
 use crate::machine_memory::ReservedAddresses;
-use crate::mem::Address;
+use crate::mem::{Address, MemoryAccessError};
 use crate::opcodes::OpCode;
 use crate::readable_article::ReadableArticle;
-use crate::sized_string::ReadableSizedString;
+use crate::sized_string::{ReadableSizedString, SizedStringWriter};
 use crate::stack_effect::stack_effect;
 
-fn process_literal(machine: &mut Machine, value: u16) -> Result<(), MachineError> {
+fn compile_u16_literal(machine: &mut Machine, value: u16) -> Result<(), MemoryAccessError> {
+    machine.memory.dict_write_opcode(OpCode::Literal16)?;
+    machine.memory.dict_write_u16(value)
+}
+
+fn process_literal(machine: &mut Machine, value: u16) -> Result<(), MemoryAccessError> {
     match machine.mode {
         MachineMode::Interpreter => machine.memory.data_push_u16(value),
-        MachineMode::Compiler => {
-            machine.memory.dict_write_opcode(OpCode::Literal16)?;
-            machine.memory.dict_write_u16(value)
-        }
-    }.map_err(|err| err.into())
+        MachineMode::Compiler => compile_u16_literal(machine, value)
+    }
 }
 
 pub fn process_trivial_opcode(machine: &mut Machine, opcode: OpCode) -> Result<(), MachineError> {
@@ -35,6 +37,35 @@ pub fn process_trivial_opcode(machine: &mut Machine, opcode: OpCode) -> Result<(
             machine.memory.dict_write_opcode(opcode)?;
         }
     };
+
+    Ok(())
+}
+
+pub fn process_compile_only_opcode(machine: &mut Machine, opcode: OpCode) -> Result<(), MachineError> {
+    machine.expect_mode(MachineMode::Compiler)?;
+
+    Ok(machine.memory.dict_write_opcode(opcode)?)
+}
+
+pub fn compile_string_literal(machine: &mut Machine) -> Result<(), MachineError> {
+    machine.memory.dict_write_opcode(OpCode::LiteralString)?;
+
+    let start_address = machine.memory.get_dict_ptr();
+    let safe_range = machine.memory.get_free_data_segment();
+    let mut writer = SizedStringWriter::new(&mut machine.memory.raw_memory, start_address, u8::MAX, safe_range)?;
+
+    loop {
+        let ch = machine.input.read()?.ok_or(MachineError::UnexpectedInputEOF)?;
+
+        if ch == b'"' {
+            break;
+        }
+
+        writer.append_u8(ch)?;
+    }
+
+    let end_address = writer.finish().full_range().end().wrapping_add(1);
+    machine.memory.set_dict_ptr(end_address);
 
     Ok(())
 }
@@ -204,6 +235,7 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"FALSE" => { process_constant(machine, FALSE)?; }
         b"BASE" => { process_constant(machine, machine.memory.get_reserved_address(ReservedAddresses::BaseVar))?; }
         b"HERE" => { process_constant(machine, machine.memory.get_reserved_address(ReservedAddresses::HereVar))?; }
+        b"PAD" => { process_literal(machine, machine.memory.get_reserved_address(ReservedAddresses::PadBuffer))?; }
         b"OVER" => { process_trivial_opcode(machine, OpCode::Over16)?; }
         b"2OVER" => { process_trivial_opcode(machine, OpCode::Over32)?; }
         b"SWAP" => { process_trivial_opcode(machine, OpCode::Swap16)?; }
@@ -215,6 +247,7 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
             process_trivial_opcode(machine, OpCode::Drop16)?;
             process_trivial_opcode(machine, OpCode::Drop16)?;
         }
+        b"ROT" => { process_trivial_opcode(machine, OpCode::Rot16)?; }
         b"+" => { process_trivial_opcode(machine, OpCode::Add16)?; }
         b"-" => { process_trivial_opcode(machine, OpCode::Sub16)?; }
         b"*" => { process_trivial_opcode(machine, OpCode::Mul16)?; }
@@ -232,7 +265,50 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"AND" => { process_trivial_opcode(machine, OpCode::And16)?; }
         b"OR" => { process_trivial_opcode(machine, OpCode::Or16)?; }
         b"XOR" => { process_trivial_opcode(machine, OpCode::Xor16)?; }
+        b"S>D" => { process_trivial_opcode(machine, OpCode::I16ToI32)?; }
+        b"R@" => { process_compile_only_opcode(machine, OpCode::CallRead16)?; }
+        b"2R@" => { process_compile_only_opcode(machine, OpCode::CallRead32)?; }
+        b">R" => { process_compile_only_opcode(machine, OpCode::CallPush16)?; }
+        b"R>" => { process_compile_only_opcode(machine, OpCode::CallPop16)?; }
+        b"2>R" => { process_compile_only_opcode(machine, OpCode::CallPush32)?; }
+        b"2R>" => { process_compile_only_opcode(machine, OpCode::CallPop32)?; }
+        b"ABS" => { process_trivial_opcode(machine, OpCode::Abs16)?; }
+        b"S\"" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+
+            compile_string_literal(machine)?;
+        }
+        b"LITERAL" => {
+            machine.expect_mode(MachineMode::Compiler)?;
+
+            let value = machine.memory.data_pop_u16()?;
+            compile_u16_literal(machine, value)?;
+        }
         b"EMIT" => { process_trivial_opcode(machine, OpCode::Emit)?; }
+        b"TYPE" => { process_trivial_opcode(machine, OpCode::EmitString)?; }
+        b"<#" => { process_trivial_opcode(machine, OpCode::PnoInit)?; }
+        b"HOLD" => { process_trivial_opcode(machine, OpCode::PnoPut)?; }
+        b"#>" => { process_trivial_opcode(machine, OpCode::PnoFinish)?; }
+        b"#" => { process_trivial_opcode(machine, OpCode::PnoPutDigit)?; }
+        b".\"" => {
+            match machine.mode {
+                MachineMode::Compiler => {
+                    compile_string_literal(machine)?;
+                    machine.memory.dict_write_opcode(OpCode::EmitString)?;
+                }
+                MachineMode::Interpreter => {
+                    loop {
+                        let c = machine.input.read()?.ok_or(MachineError::UnexpectedInputEOF)?;
+
+                        if c == b'"' {
+                            break
+                        }
+
+                        machine.output.putc(c as u16)?;
+                    }
+                }
+            }
+        }
         _ => {
             return match (machine.word_fallback_handler)(machine, name_address) {
                 Err(MachineError::IllegalWord(_)) => {
@@ -248,7 +324,7 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
                             .as_bytes(),
                         base as u32,
                     ) {
-                        process_literal(machine, parsed_literal)
+                        Ok(process_literal(machine, parsed_literal)?)
                     } else {
                         Err(MachineError::IllegalWord(Some(name_address)))
                     }

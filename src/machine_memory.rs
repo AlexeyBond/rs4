@@ -34,11 +34,13 @@ pub enum ReservedAddresses {
     /// A buffer used to keep parsed words (as counted strings)
     WordBuffer = 256,
 
-    ScratchBuffer = 512,
+    PadBuffer = 512,
+
+    PnoBuffer = 640,
 
     /// Maximal address available in reserved space.
     ///
-    /// 2 * 256 bytes for buffers + 256 bytes for 128 built-in variables - 1 to get offset of last byte
+    /// 256 + 128 + 128 bytes for buffers + 256 bytes for 128 built-in variables - 1 to get offset of last byte
     Max = 767,
 }
 
@@ -211,14 +213,17 @@ impl MachineMemory {
         Ok(())
     }
 
-    fn pop_u16(memory: &mut Mem, sp: &mut Address, safe_range: AddressRange) -> Result<u16, MemoryAccessError> {
+    fn get_u16(memory: &Mem, sp: Address, safe_range: AddressRange) -> Result<u16, MemoryAccessError> {
         memory.validate_access(
-            (*sp)..=sp.wrapping_add(1),
+            sp..=sp.wrapping_add(1),
             safe_range,
         )?;
 
-        let value = unsafe { memory.read_u16(*sp) };
+        Ok(unsafe { memory.read_u16(sp) })
+    }
 
+    fn pop_u16(memory: &mut Mem, sp: &mut Address, safe_range: AddressRange) -> Result<u16, MemoryAccessError> {
+        let value = MachineMemory::get_u16(memory, *sp, safe_range)?;
         *sp = sp.wrapping_add(2);
 
         Ok(value)
@@ -239,14 +244,17 @@ impl MachineMemory {
         Ok(())
     }
 
-    fn pop_u32(memory: &mut Mem, sp: &mut Address, safe_range: AddressRange) -> Result<u32, MemoryAccessError> {
+    fn get_u32(memory: &Mem, sp: Address, safe_range: AddressRange) -> Result<u32, MemoryAccessError> {
         memory.validate_access(
-            (*sp)..=sp.wrapping_add(1),
+            sp..=sp.wrapping_add(3),
             safe_range,
         )?;
 
-        let value = unsafe { memory.read_u32(*sp) };
+        Ok(unsafe { memory.read_u32(sp) })
+    }
 
+    fn pop_u32(memory: &mut Mem, sp: &mut Address, safe_range: AddressRange) -> Result<u32, MemoryAccessError> {
+        let value = MachineMemory::get_u32(memory, *sp, safe_range)?;
         *sp = sp.wrapping_add(4);
 
         Ok(value)
@@ -277,9 +285,29 @@ impl MachineMemory {
         MachineMemory::push_u16(&mut self.raw_memory, &mut self.call_stack_ptr, segment, value)
     }
 
+    pub fn call_push_u32(&mut self, value: u32) -> Result<(), MemoryAccessError> {
+        let segment = self.get_call_stack_segment();
+        MachineMemory::push_u32(&mut self.raw_memory, &mut self.call_stack_ptr, segment, value)
+    }
+
     pub fn call_pop_u16(&mut self) -> Result<u16, MemoryAccessError> {
         let segment = self.get_call_stack_segment();
         MachineMemory::pop_u16(&mut self.raw_memory, &mut self.call_stack_ptr, segment)
+    }
+
+    pub fn call_get_u16(&self) -> Result<u16, MemoryAccessError> {
+        let segment = self.get_call_stack_segment();
+        MachineMemory::get_u16(&self.raw_memory, self.call_stack_ptr, segment)
+    }
+
+    pub fn call_pop_u32(&mut self) -> Result<u32, MemoryAccessError> {
+        let segment = self.get_call_stack_segment();
+        MachineMemory::pop_u32(&mut self.raw_memory, &mut self.call_stack_ptr, segment)
+    }
+
+    pub fn call_get_u32(&self) -> Result<u32, MemoryAccessError> {
+        let segment = self.get_call_stack_segment();
+        MachineMemory::get_u32(&self.raw_memory, self.call_stack_ptr, segment)
     }
 
     pub fn dict_write_u8(&mut self, value: u8) -> Result<(), MemoryAccessError> {
@@ -437,6 +465,50 @@ impl MachineMemory {
                 },
             )
         }
+    }
+
+    pub fn get_base(&self) -> u16 {
+        unsafe {
+            self.raw_memory.read_u16(self.get_reserved_address(ReservedAddresses::BaseVar))
+        }
+    }
+
+    pub fn get_pno_buffer_range(&self) -> AddressRange {
+        let start_address = self.get_reserved_address(ReservedAddresses::PnoBuffer);
+        start_address..=(start_address.wrapping_add(127))
+    }
+
+    pub fn get_pno_content_range(&self) -> AddressRange {
+        let full_range = self.get_pno_buffer_range();
+        full_range.start().wrapping_add(1)..=*full_range.end()
+    }
+
+    pub fn clear_pno_buffer(&mut self) {
+        self.raw_memory.write_u8(
+            self.get_reserved_address(ReservedAddresses::PnoBuffer),
+            0,
+        );
+    }
+
+    pub fn pno_put(&mut self, ch: u8) -> Result<(), MemoryAccessError> {
+        let current_size = self.raw_memory.read_u8(self.get_reserved_address(ReservedAddresses::PnoBuffer));
+        let content_range = self.get_pno_content_range();
+        let write_address = content_range.end().wrapping_sub(current_size as u16);
+        self.raw_memory.validate_access(
+            write_address..=write_address,
+            content_range,
+        )?;
+
+        self.raw_memory.write_u8(write_address, ch);
+        self.raw_memory.write_u8(self.get_reserved_address(ReservedAddresses::PnoBuffer), current_size.wrapping_add(1));
+
+        Ok(())
+    }
+
+    pub fn pno_finish(&self) -> (Address, u8) {
+        let size = self.raw_memory.read_u8(self.get_reserved_address(ReservedAddresses::PnoBuffer));
+        let address = self.get_pno_content_range().end().wrapping_sub(size as u16).wrapping_add(1);
+        (address, size)
     }
 }
 

@@ -105,6 +105,18 @@ impl Stackable for u32 {
     }
 }
 
+impl Stackable for i32 {
+    const SIZE_WORDS: u16 = 2;
+
+    unsafe fn read(memory: &Mem, address: Address) -> Self {
+        memory.read_u32(address) as i32
+    }
+
+    unsafe fn write(&self, memory: &mut Mem, address: Address) {
+        memory.write_u32(address, *self as u32)
+    }
+}
+
 macro_rules! count_size {
     () => (0);
     ($t:ty) => (<$t as crate::stack_effect::Stackable>::SIZE_WORDS);

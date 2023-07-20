@@ -268,6 +268,14 @@ mod test {
     }
 
     #[test]
+    fn test_rot() {
+        test_16_bit_results(
+            "1 2 3 ROT",
+            &[2, 3, 1],
+        )
+    }
+
+    #[test]
     fn test_immediate() {
         test_16_bit_results(
             "
@@ -352,5 +360,53 @@ mod test {
             ",
             &[40320],
         )
+    }
+
+    #[test]
+    fn test_print_string() {
+        test_output(
+            "
+            : say-bye .\" Goodbye world\" ;
+            .\" Hello world\" 10 EMIT
+            say-bye
+            ",
+            b"Hello world\nGoodbye world",
+        )
+    }
+
+    #[test]
+    fn test_pictured_number_output() {
+        test_output(
+            "
+            666 S>D <# # # # # #>
+            ",
+            b"",
+        );
+        test_output(
+            "
+            666 S>D <# # # # # #>
+            TYPE
+            ",
+            b"0666",
+        );
+        test_output(
+            "
+            1638 16 BASE ! S>D <# # # # # #>
+            TYPE
+            ",
+            b"0666",
+        );
+    }
+
+    #[test]
+    fn test_mode_switch_and_literals() {
+        test_16_bit_results(
+            ": foo [ 1 2 + ] LITERAL + ;",
+            &[],
+        );
+        test_16_bit_results(
+            ": foo [ 1 2 + ] LITERAL + ; 3 foo",
+            &[6],
+        );
     }
 }

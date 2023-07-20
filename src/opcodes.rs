@@ -36,7 +36,7 @@ pub enum OpCode {
     Literal16 = 4,
 
     /// Must be followed by a sized string.
-    /// Pushes address of that string to data stack.
+    /// Pushes address and size of that string to data stack.
     LiteralString = 5,
 
     /// Must be followed by an 16-bit address of another instruction.
@@ -52,6 +52,13 @@ pub enum OpCode {
     /// Must be followed by a sized string.
     /// Executes a built-in word with name contained in that string.
     ExecBuiltin = 8,
+
+    CallPop16 = 9,
+    CallPush16 = 10,
+    CallPop32 = 11,
+    CallPush32 = 12,
+    CallRead16 = 13,
+    CallRead32 = 14,
 
     Dup32 = 123,
     Over16 = 124,
@@ -77,8 +84,16 @@ pub enum OpCode {
     Eq16 = 144,
     Lt16 = 145,
     Gt16 = 146,
+    Rot16 = 147,
+    I16ToI32 = 148,
+    Abs16 = 149,
 
     Emit = 200,
+    PnoInit = 201,
+    PnoPut = 202,
+    PnoFinish = 203,
+    PnoPutDigit = 204,
+    EmitString = 205,
 }
 
 impl OpCode {
@@ -178,9 +193,12 @@ impl OpCode {
                     &machine.memory.raw_memory,
                     address + 1,
                     machine.memory.get_used_dict_segment(),
-                )?.full_range();
+                )?.content_range();
 
-                machine.memory.data_push_u16(*string_range.start())?;
+                let mut fx = stack_effect!(machine; => address:Address, size:u16)?;
+                fx.address(*string_range.start());
+                fx.size(string_range.len() as u16);
+                fx.commit();
 
                 string_range.end().wrapping_add(1)
             }
@@ -448,6 +466,117 @@ impl OpCode {
 
                 address + 1
             }
+            OpCode::Rot16 => {
+                let mut fx = stack_effect!(machine; a:u16, b:u16, c:u16 => b1:u16, c1:u16, a1:u16)?;
+                let (a, b, c) = (fx.a(), fx.b(), fx.c());
+                fx.a1(a);
+                fx.b1(b);
+                fx.c1(c);
+                fx.commit();
+
+                address + 1
+            }
+            OpCode::I16ToI32 => {
+                let mut fx = stack_effect!(machine; a:i16 => b:i32)?;
+                fx.b(fx.a() as i32);
+                fx.commit();
+
+                address + 1
+            }
+            OpCode::CallPop16 => {
+                let val = machine.memory.call_pop_u16()?;
+                machine.memory.data_push_u16(val)?;
+
+                address + 1
+            }
+            OpCode::CallPush16 => {
+                let val = machine.memory.data_pop_u16()?;
+                machine.memory.call_push_u16(val)?;
+
+                address + 1
+            }
+            OpCode::CallPop32 => {
+                let val = machine.memory.call_pop_u32()?;
+                machine.memory.data_push_u32(val)?;
+
+                address + 1
+            }
+            OpCode::CallPush32 => {
+                let val = machine.memory.data_pop_u32()?;
+                machine.memory.call_push_u32(val)?;
+
+                address + 1
+            }
+            OpCode::CallRead16 => {
+                let val = machine.memory.call_get_u16()?;
+                machine.memory.data_push_u16(val)?;
+
+                address + 1
+            }
+            OpCode::CallRead32 => {
+                let val = machine.memory.call_get_u32()?;
+                machine.memory.data_push_u32(val)?;
+
+                address + 1
+            }
+            OpCode::Abs16 => {
+                let mut fx = stack_effect!(machine; a:i16 => b:i16)?;
+                fx.b(fx.a().abs());
+                fx.commit();
+
+                address + 1
+            }
+            OpCode::PnoInit => {
+                machine.memory.clear_pno_buffer();
+
+                address + 1
+            }
+            OpCode::PnoPut => {
+                let ch = machine.memory.data_pop_u16()? as u8;
+                machine.memory.pno_put(ch)?;
+
+                address + 1
+            }
+            OpCode::PnoFinish => {
+                let (addr, size) = machine.memory.pno_finish();
+                let mut fx = stack_effect!(machine; _x:u32 => address:Address, size:u16)?;
+                fx.address(addr);
+                fx.size(size as u16);
+                fx.commit();
+
+                address + 1
+            }
+            OpCode::PnoPutDigit => {
+                let mut fx = stack_effect!(machine; i:u32 => o:u32)?;
+                let base = fx.machine.memory.get_base() as u32;
+                let i = fx.i();
+
+                let digit = (i % base) as u8;
+                fx.o(i / base);
+
+                fx.commit();
+
+                let digit_char = if digit < 10 {
+                    b'0'.wrapping_add(digit)
+                } else {
+                    b'A'.wrapping_add(digit).wrapping_sub(10)
+                };
+
+                machine.memory.pno_put(digit_char)?;
+
+                address + 1
+            }
+            OpCode::EmitString => {
+                let fx = stack_effect!(machine; addr: Address, size: u16 => )?;
+                let (addr, size) = (fx.addr(), fx.size());
+                fx.commit();
+
+                let text = machine.memory.raw_memory.address_slice(addr, size as usize);
+
+                machine.output.puts(text)?;
+
+                address + 1
+            }
         })
     }
 
@@ -545,7 +674,21 @@ impl OpCode {
             OpCode::Eq16 => trivial(writer, address, "eq")?,
             OpCode::Lt16 => trivial(writer, address, "lt")?,
             OpCode::Gt16 => trivial(writer, address, "gt")?,
+            OpCode::Rot16 => trivial(writer, address, "rot")?,
+            OpCode::I16ToI32 => trivial(writer, address, "s>d")?,
+            OpCode::CallPop16 => trivial(writer, address, "call_pop")?,
+            OpCode::CallPush16 => trivial(writer, address, "call_push")?,
+            OpCode::CallPop32 => trivial(writer, address, "call_pop32")?,
+            OpCode::CallPush32 => trivial(writer, address, "call_push32")?,
+            OpCode::CallRead16 => trivial(writer, address, "call_get")?,
+            OpCode::CallRead32 => trivial(writer, address, "call_get32")?,
+            OpCode::Abs16 => trivial(writer, address, "abs")?,
             OpCode::Emit => trivial(writer, address, "emit")?,
+            OpCode::PnoInit => trivial(writer, address, "pno:init")?,
+            OpCode::PnoPut => trivial(writer, address, "pno:put")?,
+            OpCode::PnoFinish => trivial(writer, address, "pno:finish")?,
+            OpCode::PnoPutDigit => trivial(writer, address, "pno:put_digit")?,
+            OpCode::EmitString => trivial(writer, address, "emit_str")?,
         })
     }
 }

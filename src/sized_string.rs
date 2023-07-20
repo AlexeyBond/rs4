@@ -47,6 +47,10 @@ impl<'m> ReadableSizedString<'m> {
         self.address..=(self.address.wrapping_add(self.read_length() as u16))
     }
 
+    pub fn content_range(&self) -> AddressRange {
+        (self.address + 1)..=(self.address.wrapping_add(self.read_length() as u16))
+    }
+
     pub unsafe fn unsafe_new(memory: &Mem, address: Address) -> ReadableSizedString {
         ReadableSizedString { memory, address }
     }
@@ -75,9 +79,8 @@ pub struct SizedStringWriter<'m> {
     max_len: u8,
 }
 
-#[allow(dead_code)]
 impl<'m> SizedStringWriter<'m> {
-    fn new(memory: &'m mut Mem, address: Address, max_len: u8, safe_range: AddressRange) -> Result<SizedStringWriter, MemoryAccessError> {
+    pub fn new(memory: &'m mut Mem, address: Address, max_len: u8, safe_range: AddressRange) -> Result<SizedStringWriter, MemoryAccessError> {
         memory.validate_access(
             address..=(address.wrapping_add(max_len as u16)),
             safe_range,
@@ -91,11 +94,11 @@ impl<'m> SizedStringWriter<'m> {
         })
     }
 
-    fn writeable_range(&self) -> AddressRange {
+    pub fn writeable_range(&self) -> AddressRange {
         self.address..=(self.address.wrapping_add(self.max_len as u16))
     }
 
-    fn append_u8(&mut self, value: u8) -> Result<(), MemoryAccessError> {
+    pub fn append_u8(&mut self, value: u8) -> Result<(), MemoryAccessError> {
         if self.len >= self.max_len {
             return Err(MemoryAccessError {
                 access_range: self.address..=(self.address.wrapping_add(self.len as u16).wrapping_add(1)),
@@ -109,7 +112,7 @@ impl<'m> SizedStringWriter<'m> {
         Ok(())
     }
 
-    fn append_slice(&mut self, value: &[u8]) -> Result<(), MemoryAccessError> {
+    pub fn append_slice(&mut self, value: &[u8]) -> Result<(), MemoryAccessError> {
         self.memory.validate_access(
             self.address..=(self.address.wrapping_add(self.len as u16).wrapping_add(value.len() as u16)),
             self.writeable_range(),
@@ -122,7 +125,7 @@ impl<'m> SizedStringWriter<'m> {
         Ok(())
     }
 
-    fn finish(self) -> ReadableSizedString<'m> {
+    pub fn finish(self) -> ReadableSizedString<'m> {
         self.memory.write_u8(self.address, self.len);
 
         unsafe { ReadableSizedString::unsafe_new(self.memory, self.address) }
