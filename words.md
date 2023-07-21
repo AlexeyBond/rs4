@@ -1,4 +1,8 @@
+# Implemented standard words
+
 ## Core words
+
+See https://forth-standard.org/standard/core#section.6.1
 
 | Word         | Implemented | Comment                       |
 |--------------|-------------|-------------------------------|
@@ -137,6 +141,8 @@
 | ]            | ✔           |
 
 ## Core extension words
+
+See https://forth-standard.org/standard/core#section.6.2
 
 | Word          | Implemented | Comment |
 |---------------|-------------|---------|
