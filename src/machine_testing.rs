@@ -1,8 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use crate::input::StaticStringInput;
-use crate::machine::Machine;
+use crate::machine::{Machine, MachineExtensions};
 use crate::machine_error::MachineError;
 use crate::machine_memory::MachineMemory;
 use crate::output::StringOutput;
@@ -33,13 +30,33 @@ impl StackElement {
     }
 }
 
+#[derive(Default)]
+pub struct TestMachineExtensions {
+    pub input: StaticStringInput,
+    pub output: StringOutput,
+}
+
+impl MachineExtensions for TestMachineExtensions {
+    type TInput = StaticStringInput;
+    type TOutput = StringOutput;
+
+    fn get_input(&mut self) -> &mut Self::TInput {
+        &mut self.input
+    }
+
+    fn get_output(&mut self) -> &mut Self::TOutput {
+        &mut self.output
+    }
+}
+
+pub type TestMachine = Machine<TestMachineExtensions>;
+
 pub struct TestRunResult {
-    pub machine: Machine,
-    pub output: Rc<RefCell<Vec<u8>>>,
+    pub machine: TestMachine,
     pub result: Result<(), MachineError>,
 }
 
-impl Machine {
+impl TestMachine {
     //noinspection RsAssertEqual
     pub fn assert_data_stack_state(&mut self, elements: &[StackElement]) {
         let expected_stack_depth = elements.iter().fold(0, |acc, el| acc + el.size());
@@ -55,16 +72,14 @@ impl Machine {
     }
 
     pub fn run_with_test_input(input_text: &'static str) -> TestRunResult {
-        let mut machine = Machine::default();
-        let output = Rc::new(RefCell::new(Vec::new()));
+        let mut machine = TestMachine::default();
 
-        machine.input = Box::new(StaticStringInput::new(input_text));
-        machine.output = Box::new(StringOutput::new(output.clone()));
+        machine.extensions.input = StaticStringInput::new(input_text);
+
         let result = machine.interpret_input();
 
         TestRunResult {
             machine,
-            output,
             result,
         }
     }

@@ -1,8 +1,9 @@
 use std::cmp::min;
 use std::io;
 use std::str::from_utf8;
+use crate::input::Input;
 
-use crate::machine::Machine;
+use crate::machine::{Machine, MachineExtensions};
 use crate::machine_memory::MachineMemory;
 use crate::mem::Address;
 use crate::opcodes::OpCode;
@@ -70,7 +71,7 @@ impl MachineMemory {
 }
 
 impl<'m> ReadableArticle<'m> {
-    pub fn disassemble(&self, writer: &mut impl io::Write, machine: &Machine, limit: Address) -> Result<(), io::Error> {
+    pub fn disassemble<TExt: MachineExtensions>(&self, writer: &mut impl io::Write, machine: &Machine<TExt>, limit: Address) -> Result<(), io::Error> {
         writeln!(writer, "---- Define article {}", self.name())?;
         writeln!(writer, "{:04X}: previous article address: {:04X}", self.get_header_address(), self.previous_address())?;
         writeln!(writer, "{:04X}: article name: {}", self.name_address(), self.name())?;
@@ -85,12 +86,12 @@ impl<'m> ReadableArticle<'m> {
     }
 }
 
-impl Machine {
-    pub fn print_state(&self, f: &mut impl io::Write) -> io::Result<()> {
+impl<TExt: MachineExtensions> Machine<TExt> {
+    pub fn print_state(&mut self, f: &mut impl io::Write) -> io::Result<()> {
         self.memory.print_memory_state(f)?;
 
         write!(f, "State: {}\n", self.memory.get_state())?;
-        match self.input.tell() {
+        match self.extensions.get_input().tell() {
             Ok(position) => write!(f, "Input position: {position}\n"),
             Err(err) => write!(f, "Input broken: {err:?}\n"),
         }?;

@@ -88,6 +88,12 @@ pub struct StaticStringInput {
     offset: u32,
 }
 
+impl Default for StaticStringInput {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
+
 impl StaticStringInput {
     pub fn new(text: &'static str) -> StaticStringInput {
         StaticStringInput {
@@ -141,6 +147,12 @@ impl StdinInput {
             offset: 0,
             prompt: Some("\n> ".to_string()),
         }
+    }
+}
+
+impl Default for StdinInput {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

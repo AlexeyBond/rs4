@@ -37,6 +37,12 @@ impl StdoutOutput {
     }
 }
 
+impl Default for StdoutOutput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Output for StdoutOutput {
     fn putc(&mut self, character: u16) -> Result<(), OutputError> {
         self.stdout.write(&[word_to_char(character)])?;
@@ -57,6 +63,7 @@ impl Output for StdoutOutput {
     }
 }
 
+#[derive(Default)]
 pub struct StringOutput {
     pub content: Rc<RefCell<Vec<u8>>>,
 }

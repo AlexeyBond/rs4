@@ -1,45 +1,47 @@
 use std::result::Result as StdResult;
 
 use crate::builtin_words::process_builtin_word;
-use crate::input::{EmptyInput, Input};
+use crate::input::Input;
 use crate::machine_error::MachineError;
 use crate::machine_memory::MachineMemory;
 use crate::machine_state::MachineState;
 use crate::mem::Address;
 use crate::opcodes::OpCode;
-use crate::output::{Output, StdoutOutput};
+use crate::output::Output;
 
-pub trait MachineExtensions {
+pub trait MachineExtensions: Sized {
     type TInput: Input;
     type TOutput: Output;
 
-    fn get_input(machine: &mut Machine) -> &mut Self::TInput;
-    fn get_output(machine: &mut Machine) -> &mut Self::TOutput;
+    fn get_input(&mut self) -> &mut Self::TInput;
+    fn get_output(&mut self) -> &mut Self::TOutput;
 
-    fn process_unrecognized_word(_machine: &mut Machine, name_address: Address) -> Result<()> {
+    fn process_unrecognized_word(_machine: &mut Machine<Self>, name_address: Address) -> Result<()> {
         Err(MachineError::IllegalWord(Some(name_address)))
     }
 }
 
 type Result<T> = StdResult<T, MachineError>;
 
-pub type WordFallbackHandler = fn(machine: &mut Machine, name_address: Address) -> Result<()>;
-
-pub fn default_fallback_handler(_machine: &mut Machine, name_address: Address) -> Result<()> {
-    Err(MachineError::IllegalWord(Some(name_address)))
-}
-
-pub struct Machine {
-    pub input: Box<dyn Input>,
-
-    pub output: Box<dyn Output>,
-
-    pub word_fallback_handler: WordFallbackHandler,
-
+pub struct Machine<TExtensions: MachineExtensions> {
     pub memory: MachineMemory,
+    pub extensions: TExtensions,
 }
 
-impl Machine {
+impl<TExt: MachineExtensions + Default> Default for Machine<TExt> {
+    fn default() -> Self {
+        Self::new(TExt::default())
+    }
+}
+
+impl<TExt: MachineExtensions> Machine<TExt> {
+    pub fn new(extensions: TExt) -> Self {
+        Self {
+            extensions,
+            memory: MachineMemory::default(),
+        }
+    }
+
     pub fn reset(&mut self) {
         self.memory.reset();
     }
@@ -78,7 +80,7 @@ impl Machine {
     }
 
     pub fn read_input_word(&mut self) -> Result<Option<Address>> {
-        Ok(self.memory.read_input_word(self.input.as_mut())?)
+        Ok(self.memory.read_input_word(self.extensions.get_input())?)
     }
 
     pub fn interpret_input(&mut self) -> Result<()> {
@@ -88,17 +90,6 @@ impl Machine {
             } else {
                 return Ok(());
             }
-        }
-    }
-}
-
-impl Default for Machine {
-    fn default() -> Self {
-        Machine {
-            input: Box::new(EmptyInput {}),
-            output: Box::new(StdoutOutput::new()),
-            word_fallback_handler: default_fallback_handler,
-            memory: MachineMemory::default(),
         }
     }
 }
@@ -157,7 +148,7 @@ mod test {
 
     fn test_output(input: &'static str, expected_output: &'static [u8]) {
         let result = Machine::run_with_test_input(input);
-        let out_vec = (*result.output).borrow();
+        let out_vec = result.machine.extensions.output.content.borrow();
 
         assert_eq!(out_vec.as_slice(), expected_output)
     }

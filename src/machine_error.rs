@@ -2,7 +2,7 @@ use std::io;
 use std::str::from_utf8;
 
 use crate::input::InputError;
-use crate::machine::Machine;
+use crate::machine::{Machine, MachineExtensions};
 use crate::machine_state::MachineState;
 use crate::mem::{Address, MemoryAccessError};
 use crate::output::OutputError;
@@ -48,7 +48,7 @@ impl From<OutputError> for MachineError {
 }
 
 impl MachineError {
-    pub fn pretty_print(&self, f: &mut impl io::Write, machine: &Machine) -> io::Result<()> {
+    pub fn pretty_print<TExt: MachineExtensions>(&self, f: &mut impl io::Write, machine: &Machine<TExt>) -> io::Result<()> {
         match self {
             MachineError::InputError(input_err) => {
                 match input_err {

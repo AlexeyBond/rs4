@@ -174,12 +174,13 @@ macro_rules! stack_effect {
         use crate::stack_effect::implement_setters;
         use crate::stack_effect::StackEffect;
         use crate::mem::MemoryAccessError;
+        use crate::machine::MachineExtensions;
 
-        struct Effect<'m> {
-            machine: &'m mut crate::machine::Machine,
+        struct Effect<'m, TExt: MachineExtensions> {
+            machine: &'m mut crate::machine::Machine<TExt>,
         }
 
-        impl<'m> Debug for Effect<'m> {
+        impl<'m, TExt: MachineExtensions> Debug for Effect<'m, TExt> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 let current_ptr = self.machine.memory.data_stack_ptr;
 
@@ -193,7 +194,7 @@ macro_rules! stack_effect {
             }
         }
 
-        impl <'m>StackEffect for Effect<'m> {
+        impl <'m, TExt: MachineExtensions>StackEffect for Effect<'m, TExt> {
             fn in_words(&self) -> u16 {
                 count_size!($($in_type),*)
             }
@@ -203,7 +204,7 @@ macro_rules! stack_effect {
             }
         }
 
-        impl <'m>Effect<'m> {
+        impl <'m, TExt: MachineExtensions>Effect<'m, TExt> {
             implement_getters!($($in_name : $in_type),*);
             implement_setters!($($out_name : $out_type),*);
 
@@ -229,13 +230,12 @@ macro_rules! stack_effect {
 #[cfg(test)]
 mod test {
     use crate::mem::MemoryAccessError;
-    use crate::machine::Machine;
-    use crate::machine_testing::StackElement;
+    use crate::machine_testing::{StackElement, TestMachine};
     use crate::stack_effect::StackEffect;
 
     #[test]
     fn test_2_to_1_effect() {
-        let mut machine = Machine::default();
+        let mut machine = TestMachine::default();
 
         machine.memory.data_push_u16(0x1234).unwrap();
         machine.memory.data_push_u16(0xabcd).unwrap();
@@ -257,7 +257,7 @@ mod test {
 
     #[test]
     fn test_1_to_2_effect() {
-        let mut machine = Machine::default();
+        let mut machine = TestMachine::default();
 
         machine.memory.data_push_u16(0x1234).unwrap();
 
@@ -277,7 +277,7 @@ mod test {
 
     #[test]
     fn test_underflow() {
-        let mut machine = Machine::default();
+        let mut machine = TestMachine::default();
 
         machine.memory.data_push_u16(0x1234).unwrap();
 
@@ -289,7 +289,7 @@ mod test {
 
     #[test]
     fn test_overflow() {
-        let mut machine = Machine::default();
+        let mut machine = TestMachine::default();
 
         machine.memory.data_stack_ptr = 4;
 

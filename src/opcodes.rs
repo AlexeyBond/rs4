@@ -3,10 +3,11 @@ use std::str::from_utf8;
 use int_enum::IntEnum;
 use crate::builtin_words::process_builtin_word;
 
-use crate::machine::Machine;
+use crate::machine::{Machine, MachineExtensions};
 use crate::machine_error::MachineError;
 use crate::machine_state::MachineState;
 use crate::mem::Address;
+use crate::output::Output;
 use crate::sized_string::ReadableSizedString;
 use crate::stack_effect::stack_effect;
 
@@ -98,7 +99,7 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    pub fn execute_at(machine: &mut Machine, address: Address) -> Result<Address, MachineError> {
+    pub fn execute_at<TExt: MachineExtensions>(machine: &mut Machine<TExt>, address: Address) -> Result<Address, MachineError> {
         let op_code = machine.memory.raw_memory.read_u8(address);
 
         match OpCode::from_int(op_code) {
@@ -107,7 +108,7 @@ impl OpCode {
         }
     }
 
-    pub fn execute(self, machine: &mut Machine, address: Address) -> Result<Address, MachineError> {
+    pub fn execute<TExt: MachineExtensions>(self, machine: &mut Machine<TExt>, address: Address) -> Result<Address, MachineError> {
         Ok(match self {
             OpCode::Noop => {
                 address + 1
@@ -463,7 +464,7 @@ impl OpCode {
             OpCode::Emit => {
                 let char_code = machine.memory.data_pop_u16()?;
 
-                machine.output.putc(char_code)?;
+                machine.extensions.get_output().putc(char_code)?;
 
                 address + 1
             }
@@ -574,14 +575,14 @@ impl OpCode {
 
                 let text = machine.memory.raw_memory.address_slice(addr, size as usize);
 
-                machine.output.puts(text)?;
+                machine.extensions.get_output().puts(text)?;
 
                 address + 1
             }
         })
     }
 
-    pub fn format_at(writer: &mut impl io::Write, machine: &Machine, address: Address) -> Result<Address, io::Error> {
+    pub fn format_at<TExt: MachineExtensions>(writer: &mut impl io::Write, machine: &Machine<TExt>, address: Address) -> Result<Address, io::Error> {
         let op_code = machine.memory.raw_memory.read_u8(address);
 
         write!(writer, "{:04X}: ", address)?;
@@ -595,7 +596,7 @@ impl OpCode {
         }
     }
 
-    pub fn format(self, writer: &mut impl io::Write, machine: &Machine, address: Address) -> Result<Address, io::Error> {
+    pub fn format<TExt: MachineExtensions>(self, writer: &mut impl io::Write, machine: &Machine<TExt>, address: Address) -> Result<Address, io::Error> {
         fn trivial(writer: &mut impl io::Write, address: Address, name: &str) -> Result<Address, io::Error> {
             writeln!(writer, "{}", name)?;
             Ok(address + 1)
