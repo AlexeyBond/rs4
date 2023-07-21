@@ -1,9 +1,10 @@
 use int_enum::IntEnum;
 
 use crate::literal::parse_literal;
-use crate::machine::{Machine, MachineMode};
+use crate::machine::Machine;
 use crate::machine_error::MachineError;
 use crate::machine_memory::ReservedAddresses;
+use crate::machine_state::MachineState;
 use crate::mem::{Address, MemoryAccessError};
 use crate::opcodes::OpCode;
 use crate::readable_article::ReadableArticle;
@@ -16,15 +17,15 @@ fn compile_u16_literal(machine: &mut Machine, value: u16) -> Result<(), MemoryAc
 }
 
 fn process_literal(machine: &mut Machine, value: u16) -> Result<(), MemoryAccessError> {
-    match machine.mode {
-        MachineMode::Interpreter => machine.memory.data_push_u16(value),
-        MachineMode::Compiler => compile_u16_literal(machine, value)
+    match machine.memory.get_state() {
+        MachineState::Interpreter => machine.memory.data_push_u16(value),
+        MachineState::Compiler => compile_u16_literal(machine, value)
     }
 }
 
 pub fn process_trivial_opcode(machine: &mut Machine, opcode: OpCode) -> Result<(), MachineError> {
-    match machine.mode {
-        MachineMode::Interpreter => {
+    match machine.memory.get_state() {
+        MachineState::Interpreter => {
             let next_address = opcode.execute(machine, 0)?;
 
             debug_assert_eq!(
@@ -33,7 +34,7 @@ pub fn process_trivial_opcode(machine: &mut Machine, opcode: OpCode) -> Result<(
             );
         }
 
-        MachineMode::Compiler => {
+        MachineState::Compiler => {
             machine.memory.dict_write_opcode(opcode)?;
         }
     };
@@ -42,7 +43,7 @@ pub fn process_trivial_opcode(machine: &mut Machine, opcode: OpCode) -> Result<(
 }
 
 pub fn process_compile_only_opcode(machine: &mut Machine, opcode: OpCode) -> Result<(), MachineError> {
-    machine.expect_mode(MachineMode::Compiler)?;
+    machine.expect_state(MachineState::Compiler)?;
 
     Ok(machine.memory.dict_write_opcode(opcode)?)
 }
@@ -71,9 +72,9 @@ pub fn compile_string_literal(machine: &mut Machine) -> Result<(), MachineError>
 }
 
 pub fn process_constant(machine: &mut Machine, value: u16) -> Result<(), MachineError> {
-    match machine.mode {
-        MachineMode::Interpreter => machine.memory.data_push_u16(value)?,
-        MachineMode::Compiler => {
+    match machine.memory.get_state() {
+        MachineState::Interpreter => machine.memory.data_push_u16(value)?,
+        MachineState::Compiler => {
             machine.memory.dict_write_opcode(OpCode::Literal16)?;
             machine.memory.dict_write_u16(value)?
         }
@@ -89,7 +90,7 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
     match ReadableSizedString::new(&machine.memory.raw_memory, name_address, machine.memory.raw_memory.address_range())?
         .as_bytes() {
         b":" => {
-            machine.expect_mode(MachineMode::Interpreter)?;
+            machine.expect_state(MachineState::Interpreter)?;
 
             if let Some(_) = machine.memory.get_current_word() {
                 return Err(MachineError::IllegalCompilerState);
@@ -108,20 +109,20 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
 
             machine.memory.set_current_word(Some(article_start_address));
 
-            machine.mode = MachineMode::Compiler;
+            machine.memory.set_state(MachineState::Compiler);
         }
         b";" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
             let article_start_address = machine.memory.get_current_word().ok_or(MachineError::IllegalCompilerState)?;
 
             machine.memory.dict_write_opcode(OpCode::Return)?;
 
             machine.memory.last_article_ptr = Some(article_start_address);
             machine.memory.set_current_word(None);
-            machine.mode = MachineMode::Interpreter;
+            machine.memory.set_state(MachineState::Interpreter);
         }
         b"RECURSE" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
             let article_header_address = machine.memory.get_current_word().ok_or(MachineError::IllegalCompilerState)?;
             let article_body_address = ReadableArticle::new(
                 &machine.memory.raw_memory,
@@ -133,7 +134,7 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
             machine.memory.dict_write_u16(article_body_address)?;
         }
         b"IMMEDIATE" => {
-            machine.expect_mode(MachineMode::Interpreter)?;
+            machine.expect_state(MachineState::Interpreter)?;
 
             let body_address = machine.memory
                 .articles().next()
@@ -146,14 +147,14 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
             machine.memory.raw_memory.write_u8(body_address, OpCode::Noop.int_value());
         }
         b"IF" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
 
             machine.memory.dict_write_opcode(OpCode::GoToIfZ)?;
             let forward_ref = machine.memory.create_forward_reference()?;
             machine.memory.data_push_u16(forward_ref)?;
         }
         b"ELSE" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
 
             let mut fx = stack_effect!(machine; old_ref:Address => new_ref: Address)?;
             let old_ref = fx.old_ref();
@@ -166,13 +167,13 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
             fx.commit();
         }
         b"THEN" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
 
             let reference = machine.memory.data_pop_u16()?;
             machine.memory.resolve_forward_reference(reference)?;
         }
         b"BEGIN" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
 
             machine.memory.data_push_u16(machine.memory.get_dict_ptr())?;
         }
@@ -197,7 +198,7 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
             fx.commit();
         }
         b"EXIT" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
 
             machine.memory.dict_write_opcode(OpCode::Return)?;
         }
@@ -224,17 +225,18 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
             }
         }
         b"[" => {
-            machine.expect_mode(MachineMode::Compiler)?;
-            machine.mode = MachineMode::Interpreter;
+            machine.expect_state(MachineState::Compiler)?;
+            machine.memory.set_state(MachineState::Interpreter);
         }
         b"]" => {
-            machine.expect_mode(MachineMode::Interpreter)?;
-            machine.mode = MachineMode::Compiler;
+            machine.expect_state(MachineState::Interpreter)?;
+            machine.memory.set_state(MachineState::Compiler);
         }
         b"TRUE" => { process_constant(machine, TRUE)?; }
         b"FALSE" => { process_constant(machine, FALSE)?; }
         b"BASE" => { process_constant(machine, machine.memory.get_reserved_address(ReservedAddresses::BaseVar))?; }
         b"HERE" => { process_constant(machine, machine.memory.get_reserved_address(ReservedAddresses::HereVar))?; }
+        b"STATE" => { process_constant(machine, machine.memory.get_reserved_address(ReservedAddresses::StateVar))?; }
         b"PAD" => { process_literal(machine, machine.memory.get_reserved_address(ReservedAddresses::PadBuffer))?; }
         b"OVER" => { process_trivial_opcode(machine, OpCode::Over16)?; }
         b"2OVER" => { process_trivial_opcode(machine, OpCode::Over32)?; }
@@ -274,12 +276,12 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"2R>" => { process_compile_only_opcode(machine, OpCode::CallPop32)?; }
         b"ABS" => { process_trivial_opcode(machine, OpCode::Abs16)?; }
         b"S\"" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
 
             compile_string_literal(machine)?;
         }
         b"LITERAL" => {
-            machine.expect_mode(MachineMode::Compiler)?;
+            machine.expect_state(MachineState::Compiler)?;
 
             let value = machine.memory.data_pop_u16()?;
             compile_u16_literal(machine, value)?;
@@ -291,12 +293,12 @@ pub fn process_builtin_word(machine: &mut Machine, name_address: Address) -> Res
         b"#>" => { process_trivial_opcode(machine, OpCode::PnoFinish)?; }
         b"#" => { process_trivial_opcode(machine, OpCode::PnoPutDigit)?; }
         b".\"" => {
-            match machine.mode {
-                MachineMode::Compiler => {
+            match machine.memory.get_state() {
+                MachineState::Compiler => {
                     compile_string_literal(machine)?;
                     machine.memory.dict_write_opcode(OpCode::EmitString)?;
                 }
-                MachineMode::Interpreter => {
+                MachineState::Interpreter => {
                     loop {
                         let c = machine.input.read()?.ok_or(MachineError::UnexpectedInputEOF)?;
 

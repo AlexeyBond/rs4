@@ -1,33 +1,27 @@
-use std::fmt::{Display, Formatter};
 use std::result::Result as StdResult;
 
 use crate::builtin_words::process_builtin_word;
 use crate::input::{EmptyInput, Input};
 use crate::machine_error::MachineError;
 use crate::machine_memory::MachineMemory;
+use crate::machine_state::MachineState;
 use crate::mem::Address;
 use crate::opcodes::OpCode;
 use crate::output::{Output, StdoutOutput};
 
-type Result<T> = StdResult<T, MachineError>;
+pub trait MachineExtensions {
+    type TInput: Input;
+    type TOutput: Output;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum MachineMode {
-    Interpreter,
-    Compiler,
-}
+    fn get_input(machine: &mut Machine) -> &mut Self::TInput;
+    fn get_output(machine: &mut Machine) -> &mut Self::TOutput;
 
-impl Display for MachineMode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f, "{}",
-            match self {
-                MachineMode::Compiler => "compiler",
-                MachineMode::Interpreter => "interpreter"
-            }
-        )
+    fn process_unrecognized_word(_machine: &mut Machine, name_address: Address) -> Result<()> {
+        Err(MachineError::IllegalWord(Some(name_address)))
     }
 }
+
+type Result<T> = StdResult<T, MachineError>;
 
 pub type WordFallbackHandler = fn(machine: &mut Machine, name_address: Address) -> Result<()>;
 
@@ -40,8 +34,6 @@ pub struct Machine {
 
     pub output: Box<dyn Output>,
 
-    pub mode: MachineMode,
-
     pub word_fallback_handler: WordFallbackHandler,
 
     pub memory: MachineMemory,
@@ -50,15 +42,13 @@ pub struct Machine {
 impl Machine {
     pub fn reset(&mut self) {
         self.memory.reset();
-        self.mode = MachineMode::Interpreter;
     }
 
-    pub fn expect_mode(&self, mode: MachineMode) -> Result<()> {
-        if self.mode != mode {
-            return Err(MachineError::IllegalMode {
-                expected: mode,
-                actual: self.mode.clone(),
-            });
+    pub fn expect_state(&self, expected: MachineState) -> Result<()> {
+        let actual = self.memory.get_state();
+
+        if actual != expected {
+            return Err(MachineError::IllegalMode { expected, actual });
         }
 
         Ok(())
@@ -107,7 +97,6 @@ impl Default for Machine {
         Machine {
             input: Box::new(EmptyInput {}),
             output: Box::new(StdoutOutput::new()),
-            mode: MachineMode::Interpreter,
             word_fallback_handler: default_fallback_handler,
             memory: MachineMemory::default(),
         }

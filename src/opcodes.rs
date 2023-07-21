@@ -3,9 +3,10 @@ use std::str::from_utf8;
 use int_enum::IntEnum;
 use crate::builtin_words::process_builtin_word;
 
-use crate::machine::{Machine, MachineMode};
+use crate::machine::Machine;
 use crate::machine_error::MachineError;
-use crate::mem::{Address};
+use crate::machine_state::MachineState;
+use crate::mem::Address;
 use crate::sized_string::ReadableSizedString;
 use crate::stack_effect::stack_effect;
 
@@ -113,11 +114,11 @@ impl OpCode {
             }
 
             OpCode::DefaultArticleStart => {
-                match machine.mode {
-                    MachineMode::Interpreter => {
+                match machine.memory.get_state() {
+                    MachineState::Interpreter => {
                         address + 1 // Noop
                     }
-                    MachineMode::Compiler => {
+                    MachineState::Compiler => {
                         machine.memory.dict_write_opcode(OpCode::Call)?;
                         machine.memory.dict_write_u16(address + 1)?;
 

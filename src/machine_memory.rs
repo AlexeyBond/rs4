@@ -1,6 +1,7 @@
 use int_enum::IntEnum;
 
 use crate::input::{Input, InputError};
+use crate::machine_state::MachineState;
 use crate::mem::{Address, AddressRange, Mem, MemoryAccessError};
 use crate::opcodes::OpCode;
 use crate::readable_article::{ReadableArticle, ReadableArticlesIterator};
@@ -27,6 +28,9 @@ pub enum ReservedAddresses {
 
     /// Address of header of currently compiled article
     CurrentDefVar = 2,
+
+    /// Current machine state. 0 when in interpreter state, not zero in compilation state.
+    StateVar = 4,
 
     /// Radix used when parsing and formatting numbers
     BaseVar = 10,
@@ -103,6 +107,10 @@ impl MachineMemory {
             self.raw_memory.write_u16(
                 self.get_reserved_address(ReservedAddresses::HereVar),
                 *self.raw_memory.address_range().start(),
+            );
+            self.raw_memory.write_u16(
+                self.get_reserved_address(ReservedAddresses::StateVar),
+                0,
             );
             self.raw_memory.write_u16(
                 self.get_reserved_address(ReservedAddresses::CurrentDefVar),
@@ -509,6 +517,27 @@ impl MachineMemory {
         let size = self.raw_memory.read_u8(self.get_reserved_address(ReservedAddresses::PnoBuffer));
         let address = self.get_pno_content_range().end().wrapping_sub(size as u16).wrapping_add(1);
         (address, size)
+    }
+
+    pub fn get_state(&self) -> MachineState {
+        let raw_value = unsafe { self.raw_memory.read_u16(self.get_reserved_address(ReservedAddresses::StateVar)) };
+
+        if raw_value == 0 {
+            MachineState::Interpreter
+        } else {
+            MachineState::Compiler
+        }
+    }
+
+    pub fn set_state(&mut self, state: MachineState) {
+        let raw_value = match state {
+            MachineState::Interpreter => 0,
+            MachineState::Compiler => 0xFFFF,
+        };
+
+        unsafe {
+            self.raw_memory.write_u16(self.get_reserved_address(ReservedAddresses::StateVar), raw_value);
+        }
     }
 }
 

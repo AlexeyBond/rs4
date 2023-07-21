@@ -2,7 +2,8 @@ use std::io;
 use std::str::from_utf8;
 
 use crate::input::InputError;
-use crate::machine::{Machine, MachineMode};
+use crate::machine::Machine;
+use crate::machine_state::MachineState;
 use crate::mem::{Address, MemoryAccessError};
 use crate::output::OutputError;
 use crate::sized_string::ReadableSizedString;
@@ -22,8 +23,8 @@ pub enum MachineError {
     NoArticle,
     UnexpectedArticleType,
     IllegalMode {
-        expected: MachineMode,
-        actual: MachineMode,
+        expected: MachineState,
+        actual: MachineState,
     },
     Exited,
 }

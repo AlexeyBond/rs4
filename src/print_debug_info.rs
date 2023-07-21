@@ -89,7 +89,7 @@ impl Machine {
     pub fn print_state(&self, f: &mut impl io::Write) -> io::Result<()> {
         self.memory.print_memory_state(f)?;
 
-        write!(f, "Mode: {}\n", self.mode)?;
+        write!(f, "State: {}\n", self.memory.get_state())?;
         match self.input.tell() {
             Ok(position) => write!(f, "Input position: {position}\n"),
             Err(err) => write!(f, "Input broken: {err:?}\n"),
